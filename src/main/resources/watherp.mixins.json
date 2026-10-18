@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "fr.watherp.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "EntitySelectorMixin",
+    "EntitySelectorReaderMixin"
+  ],
+  "client": [
+    "EntityDisplayNameMixin",
+    "PlayerDisplayNameMixin",
+    "LivingEntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "watherp",
+  "version": "${version}",
+  "name": "Wathe RP",
+  "description": "Addon RolePlay pour Wathe : noms RP, présentations, système d'aide (/aide) avec tickets Discord et panneau staff.",
+  "authors": ["Wathe RP"],
+  "license": "ARR",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["fr.watherp.WatheRP"],
+    "client": ["fr.watherp.client.WatheRPClient"]
+  },
+  "mixins": ["watherp.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "wathe": "*"
+  }
+}
