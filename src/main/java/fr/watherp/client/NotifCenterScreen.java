@@ -15,6 +15,7 @@ public class NotifCenterScreen extends Screen {
 
     private int scroll = 0;
     private final List<Btn> btns = new ArrayList<>();
+    private Btn revealBtn;
     private long openTime;
     private int x0, y0;
 
@@ -29,16 +30,21 @@ public class NotifCenterScreen extends Screen {
         y0 = (height - H) / 2;
         ClientRp.unreadNotifs = 0;
         btns.clear();
-        int by = y0 + H - 32, bw = (W - 28 - 8) / 3;
+        int by = y0 + H - 32, bw = (W - 28 - 12) / 4;
         btns.add(new Btn(x0 + 14, by, bw, 20, "Messagerie", Ui.AQUA, () -> {
             if (client != null) client.setScreen(new ChatsScreen(-1));
         }));
-        btns.add(new Btn(x0 + 14 + bw + 4, by, bw, 20, "Tout effacer", Ui.RED, () -> {
+        // menu pour révéler son vrai nom aux personnes à qui l'on s'est présenté sous pseudonyme
+        revealBtn = new Btn(x0 + 14 + bw + 4, by, bw, 20, "Révéler mon nom", Ui.GREEN, () -> {
+            if (client != null) client.setScreen(new RevealScreen());
+        });
+        btns.add(revealBtn);
+        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Tout effacer", Ui.RED, () -> {
             ClientRp.notifs.clear();
             ClientRp.unread.clear();
             scroll = 0;
         }));
-        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
+        btns.add(new Btn(x0 + 14 + 3 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
             if (client != null) client.setScreen(new CommandScreen());
         }));
     }
@@ -78,7 +84,7 @@ public class NotifCenterScreen extends Screen {
             int ry = ly + i * ROW_H;
             boolean hover = Ui.inside(mx, my, lx, ry, lw, ROW_H) && my < ly + LIST_H;
             if (hover) c.fill(lx + 1, ry, lx + lw - 1, ry + ROW_H, Ui.BTN_HOVER);
-            int col = "staff".equals(n.kind()) ? Ui.RED : ("invite".equals(n.kind()) || "proposal".equals(n.kind()) ? Ui.GREEN : Ui.AQUA);
+            int col = kindColor(n.kind());
             c.fill(lx + 1, ry, lx + 3, ry + ROW_H, col);
             String when = ago(n.ms());
             c.drawText(tr, tr.trimToWidth(n.title(), lw - 24 - tr.getWidth(when)), lx + 8, ry + 3, hover ? Ui.ACCENT : Ui.TEXT, false);
@@ -98,8 +104,25 @@ public class NotifCenterScreen extends Screen {
             }
         }
         c.disableScissor();
-        c.drawText(tr, "Clic : ouvrir le chat (ou le panneau pour une alerte d'aide)", x0 + 14, y0 + H - 46, Ui.MUTED, false);
+        c.drawText(tr, "Clic : ouvrir le chat, le panneau d'aide ou la révélation de nom", x0 + 14, y0 + H - 46, Ui.MUTED, false);
         for (Btn b : btns) Ui.button(c, tr, b.x, b.y, b.w, b.h, b.label, mx, my, b.enabled, b.accent);
+        // pastille : nombre de personnes à qui l'on peut révéler son vrai nom
+        int pending = ClientRp.aliased.size();
+        if (revealBtn != null && pending > 0) {
+            String n = String.valueOf(pending);
+            int bw = Math.max(12, tr.getWidth(n) + 6), bx = revealBtn.x + revealBtn.w - bw + 3, byy = revealBtn.y - 5;
+            c.fill(bx, byy, bx + bw, byy + 12, Ui.ACCENT);
+            c.drawText(tr, n, bx + (bw - tr.getWidth(n)) / 2, byy + 2, 0xFF000000, false);
+        }
+    }
+
+    private static int kindColor(String kind) {
+        return switch (kind) {
+            case "staff" -> Ui.RED;
+            case "invite", "proposal" -> Ui.GREEN;
+            case "reveal", "revealed" -> Ui.ACCENT;
+            default -> Ui.AQUA;
+        };
     }
 
     @Override
@@ -134,6 +157,10 @@ public class NotifCenterScreen extends Screen {
                     if ("staff".equals(n.kind())) {
                         ClientRp.wantPanel = true;
                         ClientPlayNetworking.send(new Net.RequestTickets());
+                    } else if ("reveal".equals(n.kind())) {
+                        if (client != null) client.setScreen(new RevealScreen());
+                    } else if ("revealed".equals(n.kind())) {
+                        // information seule : quelqu'un vient de nous révéler son vrai nom
                     } else if (client != null) {
                         client.setScreen(new ChatsScreen(n.chat()));
                     }

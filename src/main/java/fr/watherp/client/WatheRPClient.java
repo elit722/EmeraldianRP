@@ -14,7 +14,7 @@ import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
-import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -23,6 +23,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -33,10 +34,14 @@ import java.util.Set;
 public class WatheRPClient implements ClientModInitializer {
     public static KeyBinding panelKey, acceptKey, aliasKey, helpKey, commandsKey, chatsKey;
 
-    /** Objets Wathe qui sont des armes : Maj+clic reste une attaque avec eux. */
-    private static final Set<String> WEAPONS = Set.of("knife", "bat", "crowbar", "revolver", "derringer", "grenade", "firecracker");
+    /**
+     * Objets Wathe avec lesquels un clic droit sur un joueur NE déclenche PAS la présentation : tous les autres objets Wathe
+     * (couteau, armes, grenade, cocktails, sac mortuaire, crochet…) ont une action au clic droit qu'il ne faut pas voler.
+     * Main vide, clé, note ou objet d'un autre mod : le clic droit ouvre la présentation.
+     */
+    private static final Set<String> RIGHT_CLICK_OK = Set.of("key", "note");
 
-    private boolean prevAttack = false;
+    private boolean prevUse = false;
 
     @Override
     public void onInitializeClient() {
@@ -96,7 +101,9 @@ public class WatheRPClient implements ClientModInitializer {
             ClientRp.own = payload.own();
             ClientRp.confirmed = payload.confirmed();
             ClientRp.seePseudo = payload.seePseudo();
+            ClientRp.onAliasList(payload.aliased());
         });
+        ClientPlayNetworking.registerGlobalReceiver(Net.Revealed.ID, (payload, ctx) -> ClientRp.onRevealed(payload));
 
         ClientPlayNetworking.registerGlobalReceiver(Net.Proposal.ID, (payload, ctx) -> ClientRp.onProposal(payload));
         ClientPlayNetworking.registerGlobalReceiver(Net.ProposalGone.ID, (payload, ctx) -> ClientRp.onProposalGone(payload.id()));
@@ -152,13 +159,14 @@ public class WatheRPClient implements ClientModInitializer {
             }
         });
 
-        // ---------------- Maj + clic gauche sur un joueur
-        AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
-            if (world.isClient && tryIntroduce(entity)) return ActionResult.FAIL;
+        // ---------------- clic droit sur un joueur (main principale seulement : l'évènement est aussi émis pour la main secondaire)
+        UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
+            // CONSUME (et non FAIL) : le clic est « accepté », donc l'objet tenu n'est pas utilisé en plus
+            if (world.isClient && hand == Hand.MAIN_HAND && tryIntroduce(entity)) return ActionResult.CONSUME;
             return ActionResult.PASS;
         });
 
-        // ---------------- touches + repli pour Maj + clic
+        // ---------------- touches + repli pour le clic droit
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.player == null) return;
             while (panelKey.wasPressed()) {
@@ -190,12 +198,12 @@ public class WatheRPClient implements ClientModInitializer {
                 if (inv != null) ClientRp.toasts.remove(inv);
                 mc.setScreen(new ChatsScreen(focus));
             }
-            boolean attack = mc.options.attackKey.isPressed();
-            if (attack && !prevAttack && mc.currentScreen == null && mc.crosshairTarget != null
+            boolean use = mc.options.useKey.isPressed();
+            if (use && !prevUse && mc.currentScreen == null && mc.crosshairTarget != null
                 && mc.crosshairTarget.getType() == HitResult.Type.ENTITY) {
                 tryIntroduce(((EntityHitResult) mc.crosshairTarget).getEntity());
             }
-            prevAttack = attack;
+            prevUse = use;
         });
     }
 
@@ -234,19 +242,21 @@ public class WatheRPClient implements ClientModInitializer {
         ClientPlayNetworking.send(new Net.RequestHelp());
     }
 
-    /** Ouvre le menu de présentation si les conditions sont réunies. @return true si le clic est consommé. */
+    /** Ouvre le menu de présentation (clic droit sur un joueur) si les conditions sont réunies. @return true si le clic est consommé. */
     private static boolean tryIntroduce(Entity entity) {
         MinecraftClient mc = MinecraftClient.getInstance();
         PlayerEntity me = mc.player;
         if (me == null || mc.currentScreen != null) return false;
         if (!(entity instanceof PlayerEntity target) || target == me) return false;
-        if (!me.isSneaking() || me.isSpectator() || me.isCreative() || target.isSpectator()) return false;
+        if (me.isSpectator() || me.isCreative() || target.isSpectator()) return false;
         if (!ClientRp.gameRunning()) return false;
         if (me.squaredDistanceTo(target) > 6 * 6) return false;
+        // une seule présentation par personne : déjà présentés = le clic droit reste un clic droit normal (le serveur revérifie)
+        if (ClientRp.known.containsKey(target.getUuid())) return false;
         ItemStack held = me.getMainHandStack();
         if (!held.isEmpty()) {
             Identifier id = Registries.ITEM.getId(held.getItem());
-            if (id.getNamespace().equals("wathe") && WEAPONS.contains(id.getPath())) return false;
+            if (id.getNamespace().equals("wathe") && !RIGHT_CLICK_OK.contains(id.getPath())) return false;
         }
         mc.setScreen(new IntroduceScreen(target.getUuid()));
         return true;

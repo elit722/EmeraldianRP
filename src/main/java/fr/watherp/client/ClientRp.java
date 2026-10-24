@@ -21,6 +21,10 @@ public final class ClientRp {
     public static boolean confirmed = false;
     /** Staff ayant activé /r voirpseudo (envoyé par le serveur) : voit les vrais pseudos en partie. */
     public static boolean seePseudo = false;
+    /** Personnes à qui je me suis présenté sous pseudonyme (je peux leur révéler mon vrai nom : menu du centre des notifications). */
+    public static List<Net.AliasEntry> aliased = new ArrayList<>();
+    /** Faux tant que la première synchro de la session n'est pas arrivée (évite de notifier les présentations déjà faites à la reconnexion). */
+    private static boolean aliasSynced = false;
 
     /** Proposition de présentation reçue : expire à endMs, popup visible jusqu'à popupEndMs, suspendue pendant la saisie d'un pseudonyme. */
     public static final class Prop {
@@ -238,6 +242,27 @@ public final class ClientRp {
         playPing(1.2f);
     }
 
+    /** Nouvelle liste des pseudonymes révélables : une notification invite à révéler son vrai nom pour chaque nouvelle entrée. */
+    public static void onAliasList(List<Net.AliasEntry> list) {
+        if (aliasSynced) {
+            Set<UUID> before = new HashSet<>();
+            for (Net.AliasEntry e : aliased) before.add(e.target());
+            for (Net.AliasEntry e : list) {
+                if (!before.contains(e.target())) {
+                    addNotif("reveal", 0, "Présenté à " + e.targetName() + " sous « " + e.alias() + " »", "Clic : révéler votre vrai nom");
+                }
+            }
+        }
+        aliasSynced = true;
+        aliased = new ArrayList<>(list);
+    }
+
+    /** Quelqu'un à qui je m'étais présenté sous pseudonyme m'a révélé son vrai nom (je viens de l'apprendre). */
+    public static void onRevealed(Net.Revealed r) {
+        addNotif("revealed", 0, r.alias() + " vous révèle son vrai nom", "C'était : " + r.realName());
+        playPing(1.3f);
+    }
+
     public static void onProposalGone(int id) {
         if (id == -1) props.clear();
         else removeProposal(id);
@@ -301,6 +326,8 @@ public final class ClientRp {
         own = "";
         confirmed = false;
         seePseudo = false;
+        aliased = new ArrayList<>();
+        aliasSynced = false;
         props.clear();
         alerts.clear();
         tickets = new ArrayList<>();

@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** Menu ouvert par Maj + clic gauche sur un joueur. */
+/** Menu ouvert par un clic droit sur un joueur (une seule présentation par personne). */
 public class IntroduceScreen extends Screen {
     private static final int W = 340, H = 170;
 
@@ -57,7 +57,8 @@ public class IntroduceScreen extends Screen {
     @Override
     public void render(DrawContext c, int mx, int my, float delta) {
         super.render(c, mx, my, delta);
-        c.drawText(textRenderer, "La personne recevra une proposition limitée dans le temps.", x0 + 20, y0 + 46, Ui.MUTED, false);
+        c.drawText(textRenderer, "La personne recevra une proposition limitée dans le temps.", x0 + 20, y0 + 40, Ui.MUTED, false);
+        c.drawText(textRenderer, "Une seule présentation par personne : choisissez bien.", x0 + 20, y0 + 52, Ui.YELLOW, false);
         if (!ClientRp.confirmed) c.drawText(textRenderer, "Définissez d'abord votre nom RP (/rpnom).", x0 + 20, y0 + 128, Ui.RED, false);
         for (Btn b : btns) Ui.button(c, textRenderer, b.x, b.y, b.w, b.h, b.label, mx, my, b.enabled, b.accent);
     }

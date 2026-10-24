@@ -39,6 +39,9 @@ public final class ServerNet {
         ServerPlayNetworking.registerGlobalReceiver(Net.Reply.ID, (payload, ctx) ->
             RpGame.reply(ctx.player(), payload.id(), payload.alias(), payload.aliasText()));
 
+        ServerPlayNetworking.registerGlobalReceiver(Net.Reveal.ID, (payload, ctx) ->
+            RpGame.reveal(ctx.player(), payload.target()));
+
         ServerPlayNetworking.registerGlobalReceiver(Net.RequestTickets.ID, (payload, ctx) -> {
             ServerPlayerEntity p = ctx.player();
             if (!Staff.isStaff(p)) {

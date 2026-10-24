@@ -315,7 +315,79 @@ public final class RpGame {
         Map<UUID, String> out = new LinkedHashMap<>();
         for (Map.Entry<UUID, Known> e : knowledgeOf(p.getUuid()).entrySet()) out.put(e.getKey(), e.getValue().name());
         String own = names.getOrDefault(p.getUuid(), "");
-        ServerPlayNetworking.send(p, new Net.Sync(out, own, names.containsKey(p.getUuid()), Staff.isSeeingPseudo(p)));
+        ServerPlayNetworking.send(p, new Net.Sync(out, own, names.containsKey(p.getUuid()), Staff.isSeeingPseudo(p), aliasedTo(p.getUuid())));
+    }
+
+    /** Vrai si A et B se sont déjà présentés l'un à l'autre (présentation menée au bout : acceptée par les deux côtés). */
+    public static boolean isIntroduced(UUID a, UUID b) {
+        return knowledgeOf(a).containsKey(b) || knowledgeOf(b).containsKey(a);
+    }
+
+    /** Proposition encore en attente entre ces deux joueurs (dans un sens ou dans l'autre), sinon null. */
+    private static Proposal proposalBetween(UUID a, UUID b) {
+        for (Proposal pr : proposals.values()) {
+            if ((pr.from.equals(a) && pr.to.equals(b)) || (pr.from.equals(b) && pr.to.equals(a))) return pr;
+        }
+        return null;
+    }
+
+    /** Une présentation vient d'être menée au bout : les éventuelles propositions croisées devenues sans objet disparaissent. */
+    private static void dropProposalsBetween(MinecraftServer server, UUID a, UUID b) {
+        Iterator<Proposal> it = proposals.values().iterator();
+        while (it.hasNext()) {
+            Proposal pr = it.next();
+            if (!((pr.from.equals(a) && pr.to.equals(b)) || (pr.from.equals(b) && pr.to.equals(a)))) continue;
+            it.remove();
+            ServerPlayerEntity recipient = server.getPlayerManager().getPlayer(pr.to);
+            if (recipient != null) ServerPlayNetworking.send(recipient, new Net.ProposalGone(pr.id));
+        }
+    }
+
+    /**
+     * Personnes à qui {@code me} s'est présenté SOUS PSEUDONYME et qui ne connaissent donc pas son vrai nom RP
+     * (triées par nom). Sert au menu « Révéler mon nom » du centre des notifications.
+     */
+    public static List<Net.AliasEntry> aliasedTo(UUID me) {
+        List<Net.AliasEntry> out = new ArrayList<>();
+        Map<UUID, Known> mine = knowledgeOf(me);
+        for (Map.Entry<UUID, Map<UUID, Known>> e : knowledge.entrySet()) {
+            Known k = e.getValue().get(me);
+            if (k == null || !k.alias()) continue;
+            Known back = mine.get(e.getKey());
+            out.add(new Net.AliasEntry(e.getKey(), back != null ? back.name() : "?", k.name()));
+        }
+        out.sort(Comparator.comparing((Net.AliasEntry a) -> fold(a.targetName())));
+        return out;
+    }
+
+    /** {@code me} révèle son vrai nom RP à {@code observer}, à qui il s'était présenté sous pseudonyme. */
+    public static void reveal(ServerPlayerEntity me, UUID observer) {
+        MinecraftServer server = me.getServer();
+        if (server == null) return;
+        String real = names.get(me.getUuid());
+        if (real == null) {
+            me.sendMessage(Msg.err("Définissez d'abord votre nom RP."), true);
+            promptName(me, "");
+            return;
+        }
+        Map<UUID, Known> theirs = knowledge.get(observer);
+        Known k = theirs == null ? null : theirs.get(me.getUuid());
+        if (k == null || !k.alias()) {
+            me.sendMessage(Msg.err("Vous ne vous êtes pas présenté sous pseudonyme à cette personne."), true);
+            syncKnowledge(me); // la liste du menu est peut-être périmée
+            return;
+        }
+        String alias = k.name();
+        Known back = knowledgeOf(me.getUuid()).get(observer);
+        theirs.put(me.getUuid(), new Known(real, false));
+        syncKnowledge(me);
+        ServerPlayerEntity target = server.getPlayerManager().getPlayer(observer);
+        if (target != null) {
+            syncKnowledge(target);
+            ServerPlayNetworking.send(target, new Net.Revealed(alias, real));
+            target.sendMessage(Msg.ok(alias + " vous révèle son vrai nom : " + real + "."), true);
+        }
+        me.sendMessage(Msg.ok("Vous avez révélé votre vrai nom (" + real + ") à " + (back != null ? back.name() : "cette personne") + "."), true);
     }
 
     private static void learn(UUID observer, UUID target, Known k) {
@@ -332,6 +404,15 @@ public final class RpGame {
         }
         ServerPlayerEntity to = server.getPlayerManager().getPlayer(toId);
         if (to == null || to == from || to.isSpectator() || from.isSpectator()) return;
+        // une présentation menée au bout (acceptée) ne se refait pas ; tant qu'elle n'a pas abouti (refusée, expirée) on peut réessayer
+        if (isIntroduced(from.getUuid(), toId)) {
+            from.sendMessage(Msg.err("Vous vous êtes déjà présentés l'un à l'autre."), true);
+            return;
+        }
+        if (proposalBetween(from.getUuid(), toId) != null) {
+            from.sendMessage(Msg.err("Une présentation est déjà en attente avec cette personne."), true);
+            return;
+        }
         if (from.getWorld() != to.getWorld() || from.squaredDistanceTo(to) > 8 * 8) {
             from.sendMessage(Msg.err("Cette personne est trop loin."), true);
             return;
@@ -357,7 +438,6 @@ public final class RpGame {
                 return;
             }
         }
-        proposals.values().removeIf(p -> p.from.equals(from.getUuid()) && p.to.equals(toId));
         int ticks = RpConfig.INSTANCE.proposalSeconds * 20;
         Proposal pr = new Proposal(nextProposal++, from.getUuid(), toId, shown, alias, ticks);
         proposals.put(pr.id, pr);
@@ -373,6 +453,12 @@ public final class RpGame {
         Proposal pr = proposals.get(id);
         if (pr == null || !pr.to.equals(to.getUuid())) {
             to.sendMessage(Msg.err("Cette proposition a expiré."), true);
+            return;
+        }
+        if (isIntroduced(to.getUuid(), pr.from)) {
+            proposals.remove(id);
+            ServerPlayNetworking.send(to, new Net.ProposalGone(id));
+            to.sendMessage(Msg.err("Vous vous êtes déjà présentés l'un à l'autre."), true);
             return;
         }
         String shown;
@@ -397,6 +483,7 @@ public final class RpGame {
         ServerPlayNetworking.send(to, new Net.ProposalGone(id));
         learn(to.getUuid(), pr.from, new Known(pr.fromShown, pr.fromAlias));
         learn(pr.from, to.getUuid(), new Known(shown, alias));
+        dropProposalsBetween(server, to.getUuid(), pr.from); // présentation menée au bout : plus de demande croisée en attente
         // historique : seuls les PSEUDONYMES sont journalisés ici (le nom RP réel l'est déjà via setName)
         if (alias) RpHistory.recordAlias(server, to.getUuid(), shown, pr.from);
         if (pr.fromAlias) RpHistory.recordAlias(server, pr.from, pr.fromShown, to.getUuid());

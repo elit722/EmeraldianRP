@@ -43,8 +43,22 @@ public final class Net {
         }
     }
 
-    /** Ce que ce joueur sait des autres (UUID -> nom affiché) + son propre nom + option staff /r voirpseudo. */
-    public record Sync(Map<UUID, String> known, String own, boolean confirmed, boolean seePseudo) implements CustomPayload {
+    /** Une personne à qui ce joueur s'est présenté SOUS PSEUDONYME : il peut lui révéler son vrai nom RP. */
+    public record AliasEntry(UUID target, String targetName, String alias) {
+        /** {@code targetName} = le nom sous lequel ce joueur connaît cette personne ; {@code alias} = le pseudonyme qu'elle connaît de lui. */
+        public void write(PacketByteBuf b) {
+            b.writeUuid(target);
+            b.writeString(targetName, 48);
+            b.writeString(alias, 48);
+        }
+
+        public static AliasEntry read(PacketByteBuf b) {
+            return new AliasEntry(b.readUuid(), b.readString(48), b.readString(48));
+        }
+    }
+
+    /** Ce que ce joueur sait des autres (UUID -> nom affiché) + son propre nom + option staff /r voirpseudo + ses pseudonymes révélables. */
+    public record Sync(Map<UUID, String> known, String own, boolean confirmed, boolean seePseudo, List<AliasEntry> aliased) implements CustomPayload {
         public static final Id<Sync> ID = pid("sync");
         public static final PacketCodec<RegistryByteBuf, Sync> CODEC = PacketCodec.of(
             (v, b) -> {
@@ -56,13 +70,37 @@ public final class Net {
                 b.writeString(v.own);
                 b.writeBoolean(v.confirmed);
                 b.writeBoolean(v.seePseudo);
+                b.writeVarInt(v.aliased.size());
+                for (AliasEntry a : v.aliased) a.write(b);
             },
             b -> {
                 int n = b.readVarInt();
                 Map<UUID, String> m = new LinkedHashMap<>();
                 for (int i = 0; i < n; i++) m.put(b.readUuid(), b.readString());
-                return new Sync(m, b.readString(), b.readBoolean(), b.readBoolean());
+                String own = b.readString();
+                boolean confirmed = b.readBoolean();
+                boolean seePseudo = b.readBoolean();
+                int k = b.readVarInt();
+                List<AliasEntry> al = new ArrayList<>();
+                for (int i = 0; i < k; i++) al.add(AliasEntry.read(b));
+                return new Sync(m, own, confirmed, seePseudo, al);
             });
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Quelqu'un à qui ce joueur s'était présenté sous pseudonyme vient de lui révéler son vrai nom RP. */
+    public record Revealed(String alias, String realName) implements CustomPayload {
+        public static final Id<Revealed> ID = pid("revealed");
+        public static final PacketCodec<RegistryByteBuf, Revealed> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeString(v.alias, 48);
+                b.writeString(v.realName, 48);
+            },
+            b -> new Revealed(b.readString(48), b.readString(48)));
 
         @Override
         public Id<? extends CustomPayload> getId() {
@@ -408,7 +446,7 @@ public final class Net {
         }
     }
 
-    /** Maj+clic : proposer de se présenter à {@code target}. */
+    /** Clic droit sur un joueur : proposer de se présenter à {@code target}. */
     public record Introduce(UUID target, boolean alias, String aliasText) implements CustomPayload {
         public static final Id<Introduce> ID = pid("introduce");
         public static final PacketCodec<RegistryByteBuf, Introduce> CODEC = PacketCodec.of(
@@ -435,6 +473,19 @@ public final class Net {
                 b.writeString(v.aliasText, 64);
             },
             b -> new Reply(b.readVarInt(), b.readBoolean(), b.readString(64)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Révéler son vrai nom RP à quelqu'un à qui on s'est présenté sous pseudonyme. */
+    public record Reveal(UUID target) implements CustomPayload {
+        public static final Id<Reveal> ID = pid("reveal");
+        public static final PacketCodec<RegistryByteBuf, Reveal> CODEC = PacketCodec.of(
+            (v, b) -> b.writeUuid(v.target),
+            b -> new Reveal(b.readUuid()));
 
         @Override
         public Id<? extends CustomPayload> getId() {
@@ -618,6 +669,7 @@ public final class Net {
     public static void registerTypes() {
         PayloadTypeRegistry.playS2C().register(OpenName.ID, OpenName.CODEC);
         PayloadTypeRegistry.playS2C().register(Sync.ID, Sync.CODEC);
+        PayloadTypeRegistry.playS2C().register(Revealed.ID, Revealed.CODEC);
         PayloadTypeRegistry.playS2C().register(Proposal.ID, Proposal.CODEC);
         PayloadTypeRegistry.playS2C().register(ProposalGone.ID, ProposalGone.CODEC);
         PayloadTypeRegistry.playS2C().register(OpenAlias.ID, OpenAlias.CODEC);
@@ -637,6 +689,7 @@ public final class Net {
         PayloadTypeRegistry.playC2S().register(SubmitName.ID, SubmitName.CODEC);
         PayloadTypeRegistry.playC2S().register(Introduce.ID, Introduce.CODEC);
         PayloadTypeRegistry.playC2S().register(Reply.ID, Reply.CODEC);
+        PayloadTypeRegistry.playC2S().register(Reveal.ID, Reveal.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestTickets.ID, RequestTickets.CODEC);
         PayloadTypeRegistry.playC2S().register(TicketAction.ID, TicketAction.CODEC);
         PayloadTypeRegistry.playC2S().register(ProposalAction.ID, ProposalAction.CODEC);
