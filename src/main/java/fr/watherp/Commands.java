@@ -78,6 +78,14 @@ public final class Commands {
             .then(literal("reset").requires(s -> Perms.has(s, Perms.NAME_FORCE))
                 .then(literal("name").then(argument("player", StringArgumentType.string()).suggests(PLAYERS)
                     .executes(Commands::resetName))))
+            .then(literal("papiers").requires(Staff::isStaff)
+                .then(argument("player", EntityArgumentType.player()).executes(ctx -> {
+                    ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+                    boolean ok = IdentityItems.give(target, true);
+                    ctx.getSource().sendFeedback(() -> ok ? Msg.ok("Papiers d'identité vierges donnés à " + target.getGameProfile().getName() + ".")
+                        : Msg.err("Inventaire plein."), false);
+                    return ok ? 1 : 0;
+                })))
             .then(literal("voirpseudo").requires(s -> Perms.has(s, Perms.PSEUDO_SEE)).executes(Commands::toggleSeePseudo))
             .then(literal("warn").requires(s -> Perms.has(s, Perms.WARN))
                 .then(argument("player", StringArgumentType.string()).suggests(PLAYERS)
@@ -134,6 +142,13 @@ public final class Commands {
                 RpGame.alias(p, IntegerArgumentType.getInteger(ctx, "id"));
                 return 1;
             }))));
+
+        // débrief de la dernière partie (écran), disponible à la fin de la partie
+        d.register(literal("rpdebrief").executes(ctx -> {
+            ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
+            if (!Debriefs.sendLast(p)) ctx.getSource().sendFeedback(() -> Msg.err("Aucun débrief disponible : il est établi à la fin de la partie."), false);
+            return 1;
+        }));
 
         // rouvre le menu de nom RP / affiche le nom actuel
         d.register(literal("rpnom").executes(ctx -> {

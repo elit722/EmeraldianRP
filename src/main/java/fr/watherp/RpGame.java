@@ -45,6 +45,8 @@ public final class RpGame {
     private static final Map<UUID, Long> lastIntro = new HashMap<>();
     /** nom RP qu'avait un joueur avant un /r reset name (pour mettre à jour les présentations déjà faites) */
     private static final Map<UUID, String> oldNames = new HashMap<>();
+    /** Débrief de la dernière partie terminée (redemandable avec /rpdebrief jusqu'au début de la partie suivante). */
+    public static Net.Debrief lastDebrief = null;
     private static int nextProposal = 1;
     private static int promptTimer = -1;
     private static int reminderTimer = 0;
@@ -89,8 +91,10 @@ public final class RpGame {
                 } catch (IllegalArgumentException ignored) {
                 }
             }
-        } else if (!RpData.INSTANCE.gameNames.isEmpty()) {
+        } else if (!RpData.INSTANCE.gameNames.isEmpty() || !RpData.INSTANCE.gameEvents.isEmpty() || !RpData.INSTANCE.contactNotes.isEmpty()) {
             RpData.INSTANCE.gameNames.clear();
+            RpData.INSTANCE.gameEvents.clear();
+            RpData.INSTANCE.contactNotes.clear();
             RpData.save();
         }
     }
@@ -110,21 +114,57 @@ public final class RpGame {
         knowledge.clear();
         proposals.clear();
         lastIntro.clear();
+        lastDebrief = null;
+        IntroLog.flush();
+        RpData.INSTANCE.gameEvents.clear();
+        RpData.INSTANCE.contactNotes.clear();
+        RpData.INSTANCE.gameStartMs = System.currentTimeMillis();
+        RpData.save();
+        IdentityItems.giveToParticipants(server);
         promptTimer = Math.max(1, RpConfig.INSTANCE.promptDelayTicks);
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) syncKnowledge(p);
     }
 
     public static void onGameEnd(MinecraftServer server) {
+        // le débrief se construit AVANT d'effacer l'état de la partie (noms, présentations, journal)
+        Net.Debrief debrief = null;
+        try {
+            debrief = Debriefs.build(server);
+        } catch (Throwable t) {
+            WatheRP.LOGGER.error("Débrief : construction impossible", t);
+        }
+        lastDebrief = debrief;
+        IntroLog.flush();
+
         gameActive = false;
         clearGameNames();
         knowledge.clear();
         proposals.clear();
         promptTimer = -1;
+        RpData.INSTANCE.gameEvents.clear();
+        RpData.INSTANCE.contactNotes.clear();
+        RpData.INSTANCE.gameStartMs = 0;
+        RpData.save();
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
             syncKnowledge(p);
             ServerPlayNetworking.send(p, new Net.ProposalGone(-1));
             ServerPlayNetworking.send(p, new Net.CloseName()); // le menu de nom RP (non fermable avec Échap) ne doit pas rester après la partie
+            ServerPlayNetworking.send(p, new Net.Contacts(new ArrayList<>())); // le carnet est vidé avec la partie
+            if (debrief != null) ServerPlayNetworking.send(p, debrief.withAuto(RpConfig.INSTANCE.debriefAutoOpen));
         }
+        if (debrief != null) Debriefs.postToDiscord(debrief);
+    }
+
+    // ---------------------------------------------------------------- vues en lecture seule (débrief, carnet)
+
+    /** Noms RP confirmés de la partie en cours (lecture seule). */
+    public static Map<UUID, String> namesView() {
+        return Collections.unmodifiableMap(names);
+    }
+
+    /** « qui connaît qui » de la partie en cours (lecture seule) : observateur -> (cible -> nom affiché). */
+    public static Map<UUID, Map<UUID, Known>> knowledgeView() {
+        return Collections.unmodifiableMap(knowledge);
     }
 
     /** Joueurs concernés par la partie (rôles Wathe) ; à défaut, tous les joueurs en survie. */
@@ -380,6 +420,9 @@ public final class RpGame {
         String alias = k.name();
         Known back = knowledgeOf(me.getUuid()).get(observer);
         theirs.put(me.getUuid(), new Known(real, false));
+        recordEvent("reveal", me.getUuid(), observer, alias, false, real);
+        IntroLog.reveal(me.getUuid(), observer, alias, real);
+        RpData.save();
         syncKnowledge(me);
         ServerPlayerEntity target = server.getPlayerManager().getPlayer(observer);
         if (target != null) {
@@ -390,8 +433,67 @@ public final class RpGame {
         me.sendMessage(Msg.ok("Vous avez révélé votre vrai nom (" + real + ") à " + (back != null ? back.name() : "cette personne") + "."), true);
     }
 
+    /** Ajoute un évènement au journal de la partie (sert au débrief et aux « autres noms » du carnet). */
+    private static void recordEvent(String kind, UUID actor, UUID other, String shown, boolean alias, String real) {
+        RpData.GameEvent e = new RpData.GameEvent();
+        e.ms = System.currentTimeMillis();
+        e.kind = kind;
+        e.actor = actor.toString();
+        e.other = other.toString();
+        e.shown = shown == null ? "" : shown;
+        e.alias = alias;
+        e.real = real == null ? "" : real;
+        RpData.INSTANCE.gameEvents.add(e);
+    }
+
     private static void learn(UUID observer, UUID target, Known k) {
         knowledge.computeIfAbsent(observer, x -> new HashMap<>()).put(target, k);
+    }
+
+    /** Résultat de l'envoi d'une proposition à une personne. */
+    private enum Sent { OK, TOO_FAR, ALREADY_KNOWN, PENDING, INVALID }
+
+    /** Crée et envoie une proposition (les vérifications de validité du nom sont faites en amont). */
+    private static Sent sendProposal(MinecraftServer server, ServerPlayerEntity from, ServerPlayerEntity to, boolean alias, String shown, double maxDist) {
+        if (to == null || to == from || to.isSpectator() || from.isSpectator()) return Sent.INVALID;
+        // une présentation menée au bout (acceptée) ne se refait pas ; tant qu'elle n'a pas abouti (refusée, expirée) on peut réessayer
+        if (isIntroduced(from.getUuid(), to.getUuid())) return Sent.ALREADY_KNOWN;
+        if (proposalBetween(from.getUuid(), to.getUuid()) != null) return Sent.PENDING;
+        if (from.getWorld() != to.getWorld() || from.squaredDistanceTo(to) > maxDist * maxDist) return Sent.TOO_FAR;
+        int ticks = RpConfig.INSTANCE.proposalSeconds * 20;
+        Proposal pr = new Proposal(nextProposal++, from.getUuid(), to.getUuid(), shown, alias, ticks);
+        proposals.put(pr.id, pr);
+        ServerPlayNetworking.send(to, new Net.Proposal(pr.id, from.getUuid(), shown, RpConfig.INSTANCE.proposalSeconds, RpConfig.INSTANCE.proposalPopupSeconds));
+        to.sendMessage(Msg.proposal(shown, pr.id, RpConfig.INSTANCE.proposalSeconds), false);
+        return Sent.OK;
+    }
+
+    /** Nom (vrai nom RP ou pseudonyme validé) que {@code from} va montrer, ou null après avoir prévenu le joueur de l'erreur. */
+    private static String shownFor(MinecraftServer server, ServerPlayerEntity from, boolean alias, String aliasText) {
+        if (alias) {
+            String shown = clean(aliasText);
+            String err = validate(server, from.getUuid(), shown, false);
+            if (err != null) {
+                from.sendMessage(Msg.err(err), true);
+                return null;
+            }
+            return shown;
+        }
+        String shown = names.get(from.getUuid());
+        if (shown == null) {
+            from.sendMessage(Msg.err("Définissez d'abord votre nom RP."), true);
+            promptName(from, "");
+        }
+        return shown;
+    }
+
+    /** Vrai si la limite d'envoi (anti-spam) est dépassée pour ce joueur. */
+    private static boolean tooFast(UUID id) {
+        long now = System.currentTimeMillis();
+        Long last = lastIntro.get(id);
+        if (last != null && now - last < 2000) return true;
+        lastIntro.put(id, now);
+        return false;
     }
 
     /** A propose à B de se présenter. */
@@ -404,7 +506,6 @@ public final class RpGame {
         }
         ServerPlayerEntity to = server.getPlayerManager().getPlayer(toId);
         if (to == null || to == from || to.isSpectator() || from.isSpectator()) return;
-        // une présentation menée au bout (acceptée) ne se refait pas ; tant qu'elle n'a pas abouti (refusée, expirée) on peut réessayer
         if (isIntroduced(from.getUuid(), toId)) {
             from.sendMessage(Msg.err("Vous vous êtes déjà présentés l'un à l'autre."), true);
             return;
@@ -417,33 +518,51 @@ public final class RpGame {
             from.sendMessage(Msg.err("Cette personne est trop loin."), true);
             return;
         }
-        long now = System.currentTimeMillis();
-        Long last = lastIntro.get(from.getUuid());
-        if (last != null && now - last < 2000) return;
-        lastIntro.put(from.getUuid(), now);
+        if (tooFast(from.getUuid())) return;
+        String shown = shownFor(server, from, alias, aliasText);
+        if (shown == null) return;
+        if (sendProposal(server, from, to, alias, shown, 8) == Sent.OK) {
+            from.sendMessage(Msg.info("Présentation envoyée, en attente de réponse (" + RpConfig.INSTANCE.proposalSeconds + " s)."), true);
+        }
+    }
 
-        String shown;
-        if (alias) {
-            shown = clean(aliasText);
-            String err = validate(server, from.getUuid(), shown, false);
-            if (err != null) {
-                from.sendMessage(Msg.err(err), true);
-                return;
-            }
-        } else {
-            shown = names.get(from.getUuid());
-            if (shown == null) {
-                from.sendMessage(Msg.err("Définissez d'abord votre nom RP."), true);
-                promptName(from, "");
-                return;
+    /**
+     * Se présenter d'un coup à tous les joueurs proches (rayon {@code introAllRadius}), avec le même nom RP ou le même
+     * pseudonyme pour tous : pratique dans un wagon. Chaque personne reçoit sa propre proposition (elle peut refuser).
+     */
+    public static void proposeAll(ServerPlayerEntity from, boolean alias, String aliasText) {
+        MinecraftServer server = from.getServer();
+        if (server == null) return;
+        if (!isRunning(server)) {
+            from.sendMessage(Msg.err("Les présentations ne sont disponibles que pendant une partie."), true);
+            return;
+        }
+        if (from.isSpectator() || from.isCreative()) return;
+        if (tooFast(from.getUuid())) return;
+        String shown = shownFor(server, from, alias, aliasText);
+        if (shown == null) return;
+        double r = RpConfig.INSTANCE.introAllRadius;
+        int sent = 0, known = 0, pending = 0, near = 0;
+        for (ServerPlayerEntity to : server.getPlayerManager().getPlayerList()) {
+            if (to == from || to.isSpectator() || to.isCreative() || to.getWorld() != from.getWorld()) continue;
+            if (from.squaredDistanceTo(to) > r * r) continue;
+            near++;
+            switch (sendProposal(server, from, to, alias, shown, r)) {
+                case OK -> sent++;
+                case ALREADY_KNOWN -> known++;
+                case PENDING -> pending++;
+                default -> {
+                }
             }
         }
-        int ticks = RpConfig.INSTANCE.proposalSeconds * 20;
-        Proposal pr = new Proposal(nextProposal++, from.getUuid(), toId, shown, alias, ticks);
-        proposals.put(pr.id, pr);
-        ServerPlayNetworking.send(to, new Net.Proposal(pr.id, from.getUuid(), shown, RpConfig.INSTANCE.proposalSeconds, RpConfig.INSTANCE.proposalPopupSeconds));
-        to.sendMessage(Msg.proposal(shown, pr.id, RpConfig.INSTANCE.proposalSeconds), false);
-        from.sendMessage(Msg.info("Présentation envoyée, en attente de réponse (" + RpConfig.INSTANCE.proposalSeconds + " s)."), true);
+        if (sent > 0) {
+            from.sendMessage(Msg.info("Présentation envoyée à " + sent + " personne" + (sent > 1 ? "s" : "") + " (« " + shown + " »), en attente de réponse ("
+                + RpConfig.INSTANCE.proposalSeconds + " s)." + (known > 0 ? " " + known + " vous connaissent déjà." : "")), true);
+        } else if (near == 0) {
+            from.sendMessage(Msg.err("Personne à moins de " + (int) r + " blocs."), true);
+        } else {
+            from.sendMessage(Msg.err(known > 0 && pending == 0 ? "Vous connaissez déjà tout le monde ici." : "Aucune nouvelle présentation possible (déjà faites ou en attente)."), true);
+        }
     }
 
     /** B répond à la proposition : la présentation devient mutuelle. */
@@ -484,6 +603,13 @@ public final class RpGame {
         learn(to.getUuid(), pr.from, new Known(pr.fromShown, pr.fromAlias));
         learn(pr.from, to.getUuid(), new Known(shown, alias));
         dropProposalsBetween(server, to.getUuid(), pr.from); // présentation menée au bout : plus de demande croisée en attente
+        // journal des présentations (débrief + journal staff Discord) : qui s'est présenté à qui, sous quel nom
+        String realTo = names.getOrDefault(to.getUuid(), ""), realFrom = names.getOrDefault(pr.from, "");
+        recordEvent("intro", pr.from, to.getUuid(), pr.fromShown, pr.fromAlias, realFrom);
+        IntroLog.intro(pr.from, to.getUuid(), pr.fromShown, pr.fromAlias, realFrom);
+        recordEvent("intro", to.getUuid(), pr.from, shown, alias, realTo);
+        IntroLog.intro(to.getUuid(), pr.from, shown, alias, realTo);
+        RpData.save();
         // historique : seuls les PSEUDONYMES sont journalisés ici (le nom RP réel l'est déjà via setName)
         if (alias) RpHistory.recordAlias(server, to.getUuid(), shown, pr.from);
         if (pr.fromAlias) RpHistory.recordAlias(server, pr.from, pr.fromShown, to.getUuid());

@@ -5,5 +5,8 @@
   "category.watherp": "Wathe RP",
   "key.watherp.help": "Aide",
   "key.watherp.commands": "Menu de commandes",
-  "key.watherp.chats": "Messagerie (chats privés)"
+  "key.watherp.chats": "Messagerie (chats privés)",
+  "key.watherp.contacts": "Contact book",
+  "key.watherp.introall": "Introduce yourself to everyone nearby",
+  "item.watherp.identity_paper": "Identity papers"
 }

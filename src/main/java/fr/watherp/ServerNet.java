@@ -39,6 +39,28 @@ public final class ServerNet {
         ServerPlayNetworking.registerGlobalReceiver(Net.Reply.ID, (payload, ctx) ->
             RpGame.reply(ctx.player(), payload.id(), payload.alias(), payload.aliasText()));
 
+        // ---------------------------------------------------------------- présentation de groupe, carnet, débrief
+        ServerPlayNetworking.registerGlobalReceiver(Net.IntroduceAll.ID, (payload, ctx) ->
+            RpGame.proposeAll(ctx.player(), payload.alias(), payload.aliasText()));
+
+        ServerPlayNetworking.registerGlobalReceiver(Net.RequestContacts.ID, (payload, ctx) ->
+            ContactBook.send(ctx.player()));
+
+        ServerPlayNetworking.registerGlobalReceiver(Net.ContactNote.ID, (payload, ctx) ->
+            ContactBook.saveNote(ctx.player(), payload.target(), payload.text()));
+
+        ServerPlayNetworking.registerGlobalReceiver(Net.RequestDebrief.ID, (payload, ctx) -> {
+            ServerPlayerEntity p = ctx.player();
+            if (!Debriefs.sendLast(p)) p.sendMessage(Msg.err("Aucun débrief disponible : il est établi à la fin de la partie."), true);
+        });
+
+        // ---------------------------------------------------------------- papiers d'identité
+        ServerPlayNetworking.registerGlobalReceiver(Net.SaveIdentity.ID, (payload, ctx) ->
+            IdentityItems.save(ctx.player(), payload));
+
+        ServerPlayNetworking.registerGlobalReceiver(Net.ShowIdentity.ID, (payload, ctx) ->
+            IdentityItems.showAll(ctx.player()));
+
         ServerPlayNetworking.registerGlobalReceiver(Net.Reveal.ID, (payload, ctx) ->
             RpGame.reveal(ctx.player(), payload.target()));
 

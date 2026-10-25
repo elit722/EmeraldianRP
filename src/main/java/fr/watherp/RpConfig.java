@@ -54,6 +54,22 @@ public final class RpConfig {
     /** Délai (ms) minimal entre deux messages de chat intégré d'un même joueur. */
     public int chatCooldownMs = 400;
 
+    // ---- journal des présentations, présentation de groupe, débrief, papiers d'identité
+    /** Journal staff Discord des présentations / révélations de nom / papiers montrés (webhook du journal : logWebhookUrl, sinon webhookUrl). */
+    public boolean logIntroductions = true;
+    /** Les lignes du journal sont regroupées en un seul embed toutes les N secondes (évite de saturer le webhook). */
+    public int introLogFlushSeconds = 10;
+    /** Rayon (blocs) de « Se présenter à tous les joueurs proches » et de « Montrer à tous les proches » (papiers). */
+    public double introAllRadius = 10.0;
+    /** Envoie le débrief de fin de partie sur Discord. */
+    public boolean postDebriefToDiscord = true;
+    /** Webhook Discord du débrief. Vide = webhook du journal staff, sinon webhook des tickets. */
+    public String debriefWebhookUrl = "";
+    /** Ouvre automatiquement l'écran de débrief chez tous les joueurs à la fin de la partie. */
+    public boolean debriefAutoOpen = true;
+    /** Donne des papiers d'identité vierges aux participants au début de la partie (s'ils n'en ont pas déjà). */
+    public boolean giveIdentityPaper = true;
+
     /** Plafond absolu : c'est la limite relevée par EntitySelectorReaderMixin. */
     public static final int MAX_NAME_HARD = 32;
 
@@ -87,6 +103,9 @@ public final class RpConfig {
             INSTANCE.heartbeatSeconds = Math.max(60, Math.min(300, INSTANCE.heartbeatSeconds));
             INSTANCE.permissionTtlSeconds = Math.max(60, Math.min(600, INSTANCE.permissionTtlSeconds));
             INSTANCE.chatCooldownMs = Math.max(100, INSTANCE.chatCooldownMs);
+            if (INSTANCE.debriefWebhookUrl == null) INSTANCE.debriefWebhookUrl = "";
+            INSTANCE.introLogFlushSeconds = Math.max(3, Math.min(120, INSTANCE.introLogFlushSeconds));
+            INSTANCE.introAllRadius = Math.max(2.0, Math.min(48.0, INSTANCE.introAllRadius));
             // v3 : le type « role » (questions sur le rôle, ticket anonyme recommandé) est ajouté aux configs existantes
             if (INSTANCE.configVersion < 3) {
                 if (!INSTANCE.helpTypes.contains("role")) INSTANCE.helpTypes.add(0, "role");

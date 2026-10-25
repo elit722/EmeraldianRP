@@ -54,6 +54,11 @@ public final class ClientRp {
 
     public static final List<AlertCard> alerts = new ArrayList<>();
 
+    /** Carnet de contacts (renvoyé par le serveur à l'ouverture du carnet). */
+    public static List<Net.ContactEntry> contacts = new ArrayList<>();
+    /** Débrief de la dernière partie (envoyé à la fin de la partie ou à la demande). */
+    public static Net.Debrief debrief = null;
+
     public static List<Ticket> tickets = new ArrayList<>();
     public static List<StaffRecord> records = new ArrayList<>();
     public static boolean wantPanel = false;
@@ -328,6 +333,8 @@ public final class ClientRp {
         seePseudo = false;
         aliased = new ArrayList<>();
         aliasSynced = false;
+        contacts = new ArrayList<>();
+        debrief = null;
         props.clear();
         alerts.clear();
         tickets = new ArrayList<>();

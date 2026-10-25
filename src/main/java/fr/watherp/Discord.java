@@ -10,6 +10,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.server.MinecraftServer;
 
@@ -166,8 +168,8 @@ public final class Discord {
     public static void log(String title, String description, int color) {
         RpConfig c = RpConfig.INSTANCE;
         if (!c.logStaffActions) return;
-        String url = c.logWebhookUrl != null && RpConfig.isDiscordWebhook(c.logWebhookUrl) ? c.logWebhookUrl : c.webhookUrl;
-        if (url == null || !url.startsWith("https://")) return;
+        String url = journalUrl();
+        if (url == null) return;
         JsonObject root = new JsonObject();
         root.addProperty("username", c.serverName + " · Journal staff");
         JsonObject allowed = new JsonObject();
@@ -188,6 +190,110 @@ public final class Discord {
                 .POST(HttpRequest.BodyPublishers.ofString(root.toString()))
                 .build();
             HTTP.sendAsync(req, HttpResponse.BodyHandlers.ofString()).exceptionally(ex -> {
+                WatheRP.LOGGER.warn("Webhook Discord (journal) : {}", ex.toString());
+                return null;
+            });
+        } catch (Exception ex) {
+            WatheRP.LOGGER.warn("Webhook Discord (journal) : URL invalide");
+        }
+    }
+
+    // ---------------------------------------------------------------- journal des présentations / débrief
+
+    /** Webhook du journal staff : logWebhookUrl s'il est valide, sinon le webhook des tickets ; null si rien n'est configuré. */
+    public static String journalUrl() {
+        RpConfig c = RpConfig.INSTANCE;
+        if (c.logWebhookUrl != null && RpConfig.isDiscordWebhook(c.logWebhookUrl)) return c.logWebhookUrl.trim();
+        if (c.webhookUrl != null && c.webhookUrl.startsWith("https://")) return c.webhookUrl.trim();
+        return null;
+    }
+
+    /** Webhook du débrief : debriefWebhookUrl s'il est valide, sinon celui du journal staff. */
+    public static String debriefUrl() {
+        RpConfig c = RpConfig.INSTANCE;
+        if (c.debriefWebhookUrl != null && RpConfig.isDiscordWebhook(c.debriefWebhookUrl)) return c.debriefWebhookUrl.trim();
+        return journalUrl();
+    }
+
+    /** Échappe le Markdown de Discord et neutralise les mentions (@everyone, @here, <@id>) dans un texte saisi par un joueur. */
+    public static String esc(String s) {
+        if (s == null) return "";
+        StringBuilder b = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            switch (ch) {
+                case '\\', '*', '_', '~', '`', '|', '>', '#', '[', ']', '(', ')' -> b.append('\\').append(ch);
+                case '@' -> b.append("@\u200b");
+                case '<' -> b.append("<\u200b");
+                case '\n', '\r' -> b.append(' ');
+                default -> b.append(ch);
+            }
+        }
+        return b.toString();
+    }
+
+    private static final int EMBED_CHARS = 3800;
+
+    /**
+     * Envoie une liste de lignes en embeds (un message par tranche d'environ 3800 caractères, au plus {@code maxMessages}
+     * messages, espacés de 700 ms pour rester sous la limite d'envoi des webhooks). Aucune mention n'est possible.
+     */
+    public static void postLines(String url, String username, String title, List<String> lines, int color, int maxMessages) {
+        if (url == null || lines == null || lines.isEmpty()) return;
+        List<String> chunks = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        int omitted = 0;
+        for (String raw : lines) {
+            String line = raw.length() > 900 ? raw.substring(0, 899) + "…" : raw;
+            if (cur.length() + line.length() + 1 > EMBED_CHARS && cur.length() > 0) {
+                chunks.add(cur.toString());
+                cur.setLength(0);
+            }
+            if (chunks.size() >= Math.max(1, maxMessages)) {
+                omitted++;
+                continue;
+            }
+            if (cur.length() > 0) cur.append('\n');
+            cur.append(line);
+        }
+        if (cur.length() > 0 && chunks.size() < Math.max(1, maxMessages)) chunks.add(cur.toString());
+        else if (cur.length() > 0) omitted += cur.toString().split("\n").length;
+        if (omitted > 0 && !chunks.isEmpty()) {
+            int last = chunks.size() - 1;
+            chunks.set(last, chunks.get(last) + "\n*… " + omitted + " ligne(s) non affichée(s)*");
+        }
+        for (int i = 0; i < chunks.size(); i++) {
+            final int idx = i;
+            String t = idx == 0 ? title : title + " (suite " + (idx + 1) + ")";
+            if (idx == 0) postEmbed(url, username, t, chunks.get(idx), color);
+            else java.util.concurrent.CompletableFuture.delayedExecutor(700L * idx, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .execute(() -> postEmbed(url, username, t, chunks.get(idx), color));
+        }
+    }
+
+    private static void postEmbed(String url, String username, String title, String description, int color) {
+        JsonObject root = new JsonObject();
+        root.addProperty("username", username);
+        JsonObject allowed = new JsonObject();
+        allowed.add("parse", new JsonArray()); // jamais de mention
+        root.add("allowed_mentions", allowed);
+        JsonObject e = new JsonObject();
+        e.addProperty("title", cut(title, 250));
+        e.addProperty("description", cut(description, 4000));
+        e.addProperty("color", color);
+        e.addProperty("timestamp", Instant.now().toString());
+        JsonArray embeds = new JsonArray();
+        embeds.add(e);
+        root.add("embeds", embeds);
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(root.toString()))
+                .build();
+            HTTP.sendAsync(req, HttpResponse.BodyHandlers.ofString()).thenAccept(r -> {
+                if (r.statusCode() / 100 != 2) WatheRP.LOGGER.warn("Webhook Discord (journal) : HTTP {} {}", r.statusCode(), r.body());
+            }).exceptionally(ex -> {
                 WatheRP.LOGGER.warn("Webhook Discord (journal) : {}", ex.toString());
                 return null;
             });

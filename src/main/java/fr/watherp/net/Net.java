@@ -1,5 +1,6 @@
 package fr.watherp.net;
 
+import fr.watherp.Identity;
 import fr.watherp.StaffRecord;
 import fr.watherp.Ticket;
 import fr.watherp.WatheRP;
@@ -432,6 +433,176 @@ public final class Net {
         }
     }
 
+
+    // ---- carnet de contacts
+
+    /**
+     * Un contact du carnet.
+     * @param name        nom sous lequel je le connais (vrai nom ou pseudonyme)
+     * @param alias       ce nom est un pseudonyme
+     * @param mineToThem  nom sous lequel IL me connaît (vide : il ne s'est pas encore présenté à moi en retour)
+     * @param mineAlias   ce nom est mon pseudonyme
+     * @param aka         autres noms qu'il m'a montrés avant (pseudonyme puis vrai nom, par exemple)
+     * @param note        ma note privée
+     */
+    public record ContactEntry(UUID id, String name, boolean alias, String mineToThem, boolean mineAlias, String aka, String note, boolean online) {
+        public void write(PacketByteBuf b) {
+            b.writeUuid(id);
+            b.writeString(name, 96);
+            b.writeBoolean(alias);
+            b.writeString(mineToThem, 96);
+            b.writeBoolean(mineAlias);
+            b.writeString(aka, 300);
+            b.writeString(note, 2000);
+            b.writeBoolean(online);
+        }
+
+        public static ContactEntry read(PacketByteBuf b) {
+            return new ContactEntry(b.readUuid(), b.readString(96), b.readBoolean(), b.readString(96), b.readBoolean(),
+                b.readString(300), b.readString(2000), b.readBoolean());
+        }
+    }
+
+    /** Le carnet de contacts du joueur. */
+    public record Contacts(List<ContactEntry> list) implements CustomPayload {
+        public static final Id<Contacts> ID = pid("contacts");
+        public static final PacketCodec<RegistryByteBuf, Contacts> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeVarInt(v.list.size());
+                for (ContactEntry e : v.list) e.write(b);
+            },
+            b -> {
+                int n = b.readVarInt();
+                List<ContactEntry> l = new ArrayList<>();
+                for (int i = 0; i < n; i++) l.add(ContactEntry.read(b));
+                return new Contacts(l);
+            });
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    // ---- débrief de fin de partie
+
+    /** Un joueur : UUID, vrai nom RP, pseudo Minecraft. */
+    public record DbRef(UUID id, String rp, String mc) {
+        public void write(PacketByteBuf b) {
+            b.writeUuid(id);
+            b.writeString(rp, 96);
+            b.writeString(mc, 32);
+        }
+
+        public static DbRef read(PacketByteBuf b) {
+            return new DbRef(b.readUuid(), b.readString(96), b.readString(32));
+        }
+    }
+
+    public record DbPlayer(DbRef p, int realIntros, int aliasIntros, int reveals, int contacts) {
+        public void write(PacketByteBuf b) {
+            p.write(b);
+            b.writeVarInt(realIntros);
+            b.writeVarInt(aliasIntros);
+            b.writeVarInt(reveals);
+            b.writeVarInt(contacts);
+        }
+
+        public static DbPlayer read(PacketByteBuf b) {
+            return new DbPlayer(DbRef.read(b), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readVarInt());
+        }
+    }
+
+    /** {@code liar} s'est présenté à {@code victim} sous un faux nom ; {@code revealedAtMin} = -1 : jamais révélé. */
+    public record DbLie(DbRef liar, DbRef victim, String claimed, int atMin, int revealedAtMin, String note) {
+        public void write(PacketByteBuf b) {
+            liar.write(b);
+            victim.write(b);
+            b.writeString(claimed, 96);
+            b.writeVarInt(atMin);
+            b.writeVarInt(revealedAtMin + 1);
+            b.writeString(note, 160);
+        }
+
+        public static DbLie read(PacketByteBuf b) {
+            DbRef liar = DbRef.read(b), victim = DbRef.read(b);
+            String claimed = b.readString(96);
+            int at = b.readVarInt();
+            int rev = b.readVarInt() - 1;
+            return new DbLie(liar, victim, claimed, at, rev, b.readString(160));
+        }
+    }
+
+    public record DbReveal(DbRef who, DbRef to, String alias, int atMin) {
+        public void write(PacketByteBuf b) {
+            who.write(b);
+            to.write(b);
+            b.writeString(alias, 96);
+            b.writeVarInt(atMin);
+        }
+
+        public static DbReveal read(PacketByteBuf b) {
+            return new DbReveal(DbRef.read(b), DbRef.read(b), b.readString(96), b.readVarInt());
+        }
+    }
+
+    /** Débrief de la partie. {@code auto} : envoyé à la fin de la partie (ouverture automatique) et non à la demande du joueur. */
+    public record Debrief(int minutes, List<DbPlayer> players, List<DbLie> lies, List<DbReveal> reveals, boolean auto) implements CustomPayload {
+        public static final Id<Debrief> ID = pid("debrief");
+        public static final PacketCodec<RegistryByteBuf, Debrief> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeVarInt(v.minutes);
+                b.writeVarInt(v.players.size());
+                for (DbPlayer p : v.players) p.write(b);
+                b.writeVarInt(v.lies.size());
+                for (DbLie l : v.lies) l.write(b);
+                b.writeVarInt(v.reveals.size());
+                for (DbReveal r : v.reveals) r.write(b);
+                b.writeBoolean(v.auto);
+            },
+            b -> {
+                int minutes = b.readVarInt();
+                List<DbPlayer> players = new ArrayList<>();
+                for (int i = 0, n = b.readVarInt(); i < n; i++) players.add(DbPlayer.read(b));
+                List<DbLie> lies = new ArrayList<>();
+                for (int i = 0, n = b.readVarInt(); i < n; i++) lies.add(DbLie.read(b));
+                List<DbReveal> reveals = new ArrayList<>();
+                for (int i = 0, n = b.readVarInt(); i < n; i++) reveals.add(DbReveal.read(b));
+                return new Debrief(minutes, players, lies, reveals, b.readBoolean());
+            });
+
+        public Debrief withAuto(boolean a) {
+            return new Debrief(minutes, players, lies, reveals, a);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    // ---- papiers d'identité
+
+    /**
+     * Ouvre la fiche d'identité. {@code editable} : le joueur peut la remplir / la modifier (ses papiers ou des papiers vierges) ;
+     * {@code shownBy} : nom (connu du destinataire) de la personne qui montre ses papiers, vide sinon.
+     */
+    public record OpenIdentity(boolean editable, String shownBy, Identity identity) implements CustomPayload {
+        public static final Id<OpenIdentity> ID = pid("open_identity");
+        public static final PacketCodec<RegistryByteBuf, OpenIdentity> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeBoolean(v.editable);
+                b.writeString(v.shownBy, 96);
+                v.identity.write(b);
+            },
+            b -> new OpenIdentity(b.readBoolean(), b.readString(96), Identity.read(b)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     // ============================================================ Client -> Serveur
 
     public record SubmitName(String name) implements CustomPayload {
@@ -664,6 +835,95 @@ public final class Net {
         }
     }
 
+
+    /** Se présenter d'un coup à tous les joueurs proches (même nom RP ou même pseudonyme pour tous). */
+    public record IntroduceAll(boolean alias, String aliasText) implements CustomPayload {
+        public static final Id<IntroduceAll> ID = pid("introduce_all");
+        public static final PacketCodec<RegistryByteBuf, IntroduceAll> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeBoolean(v.alias);
+                b.writeString(v.aliasText, 64);
+            },
+            b -> new IntroduceAll(b.readBoolean(), b.readString(64)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Demande le carnet de contacts. */
+    public record RequestContacts() implements CustomPayload {
+        public static final Id<RequestContacts> ID = pid("request_contacts");
+        public static final PacketCodec<RegistryByteBuf, RequestContacts> CODEC = PacketCodec.of((v, b) -> {
+        }, b -> new RequestContacts());
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Note privée sur un contact (texte vide = efface la note). */
+    public record ContactNote(UUID target, String text) implements CustomPayload {
+        public static final Id<ContactNote> ID = pid("contact_note");
+        public static final PacketCodec<RegistryByteBuf, ContactNote> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeUuid(v.target);
+                b.writeString(v.text, 2000);
+            },
+            b -> new ContactNote(b.readUuid(), b.readString(2000)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Redemande le débrief de la dernière partie. */
+    public record RequestDebrief() implements CustomPayload {
+        public static final Id<RequestDebrief> ID = pid("request_debrief");
+        public static final PacketCodec<RegistryByteBuf, RequestDebrief> CODEC = PacketCodec.of((v, b) -> {
+        }, b -> new RequestDebrief());
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Enregistre les papiers d'identité tenus en main. Le serveur revérifie tout (titulaire, longueurs). */
+    public record SaveIdentity(String name, String age, String profession, String provenance, String destination, String mark) implements CustomPayload {
+        public static final Id<SaveIdentity> ID = pid("save_identity");
+        public static final PacketCodec<RegistryByteBuf, SaveIdentity> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeString(v.name, 160);
+                b.writeString(v.age, 64);
+                b.writeString(v.profession, 160);
+                b.writeString(v.provenance, 160);
+                b.writeString(v.destination, 160);
+                b.writeString(v.mark, 320);
+            },
+            b -> new SaveIdentity(b.readString(160), b.readString(64), b.readString(160), b.readString(160), b.readString(160), b.readString(320)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Montre ses papiers (tenus en main) à tous les joueurs proches. */
+    public record ShowIdentity() implements CustomPayload {
+        public static final Id<ShowIdentity> ID = pid("show_identity");
+        public static final PacketCodec<RegistryByteBuf, ShowIdentity> CODEC = PacketCodec.of((v, b) -> {
+        }, b -> new ShowIdentity());
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     // ============================================================ enregistrement
 
     public static void registerTypes() {
@@ -685,6 +945,9 @@ public final class Net {
         PayloadTypeRegistry.playS2C().register(ChatInvite.ID, ChatInvite.CODEC);
         PayloadTypeRegistry.playS2C().register(ChatOpen.ID, ChatOpen.CODEC);
         PayloadTypeRegistry.playS2C().register(PlayerList.ID, PlayerList.CODEC);
+        PayloadTypeRegistry.playS2C().register(Contacts.ID, Contacts.CODEC);
+        PayloadTypeRegistry.playS2C().register(Debrief.ID, Debrief.CODEC);
+        PayloadTypeRegistry.playS2C().register(OpenIdentity.ID, OpenIdentity.CODEC);
 
         PayloadTypeRegistry.playC2S().register(SubmitName.ID, SubmitName.CODEC);
         PayloadTypeRegistry.playC2S().register(Introduce.ID, Introduce.CODEC);
@@ -702,5 +965,11 @@ public final class Net {
         PayloadTypeRegistry.playC2S().register(ChatAdd.ID, ChatAdd.CODEC);
         PayloadTypeRegistry.playC2S().register(ChatClose.ID, ChatClose.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestPlayers.ID, RequestPlayers.CODEC);
+        PayloadTypeRegistry.playC2S().register(IntroduceAll.ID, IntroduceAll.CODEC);
+        PayloadTypeRegistry.playC2S().register(RequestContacts.ID, RequestContacts.CODEC);
+        PayloadTypeRegistry.playC2S().register(ContactNote.ID, ContactNote.CODEC);
+        PayloadTypeRegistry.playC2S().register(RequestDebrief.ID, RequestDebrief.CODEC);
+        PayloadTypeRegistry.playC2S().register(SaveIdentity.ID, SaveIdentity.CODEC);
+        PayloadTypeRegistry.playC2S().register(ShowIdentity.ID, ShowIdentity.CODEC);
     }
 }

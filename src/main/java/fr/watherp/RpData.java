@@ -34,6 +34,27 @@ public final class RpData {
     /** File d'attente des événements à envoyer au Worker (renvoyée tant que le Worker n'a pas répondu 2xx). */
     public List<HistoryEntry> pendingHistory = new ArrayList<>();
 
+    /** Un évènement de présentation de la partie en cours (sert au débrief et aux carnets de contacts). */
+    public static final class GameEvent {
+        public long ms;
+        /** intro : {@code actor} s'est présenté à {@code other} ; reveal : {@code actor} a révélé son vrai nom à {@code other}. */
+        public String kind = "intro";
+        public String actor = "", other = "";
+        /** intro : nom montré ; reveal : le pseudonyme que {@code other} connaissait. */
+        public String shown = "";
+        /** intro : le nom montré est un pseudonyme. */
+        public boolean alias;
+        /** Vrai nom RP de {@code actor} à ce moment-là. */
+        public String real = "";
+    }
+
+    /** Présentations et révélations de la partie EN COURS (vidé au début de la partie suivante : le débrief est construit à la fin). */
+    public List<GameEvent> gameEvents = new ArrayList<>();
+    /** Début de la partie en cours (ms), pour les horodatages « t+X min » du débrief. */
+    public long gameStartMs = 0;
+    /** Notes privées du carnet de contacts : observateur (uuid) -> (contact (uuid) -> note). Effacées à la fin de la partie. */
+    public Map<String, Map<String, String>> contactNotes = new LinkedHashMap<>();
+
     private static Path path() {
         return FabricLoader.getInstance().getConfigDir().resolve("watherp-data.json");
     }
@@ -59,6 +80,8 @@ public final class RpData {
         if (INSTANCE.seePseudo == null) INSTANCE.seePseudo = new LinkedHashSet<>();
         if (INSTANCE.records == null) INSTANCE.records = new ArrayList<>();
         if (INSTANCE.pendingHistory == null) INSTANCE.pendingHistory = new ArrayList<>();
+        if (INSTANCE.gameEvents == null) INSTANCE.gameEvents = new ArrayList<>();
+        if (INSTANCE.contactNotes == null) INSTANCE.contactNotes = new LinkedHashMap<>();
     }
 
     public static synchronized void save() {
@@ -68,6 +91,7 @@ public final class RpData {
             while (INSTANCE.tickets.size() > 300) INSTANCE.tickets.remove(0);
             while (INSTANCE.records.size() > 2000) INSTANCE.records.remove(0);
             while (INSTANCE.pendingHistory.size() > 500) INSTANCE.pendingHistory.remove(0);
+            while (INSTANCE.gameEvents.size() > 3000) INSTANCE.gameEvents.remove(0);
             try (Writer w = Files.newBufferedWriter(p)) {
                 GSON.toJson(INSTANCE, w);
             }

@@ -27,6 +27,12 @@ Installer le jar dans `mods/` du serveur **et** des clients (avec Wathe 1.4.x et
 | `heartbeatSeconds` / `permissionTtlSeconds` | Heartbeat vers le Worker (120 s) / durée du cache des permissions (180 s) |
 | `logWebhookUrl` / `logStaffActions` | Webhook Discord séparé pour le journal staff (sinon `webhookUrl`) / l'activer ou non |
 | `chatCooldownMs` | Délai minimal entre deux messages de chat intégré |
+| `logIntroductions` | Journal staff Discord des présentations / révélations / papiers montrés (webhook du journal : `logWebhookUrl`, sinon `webhookUrl`) |
+| `introLogFlushSeconds` | Les lignes du journal sont regroupées en un embed toutes les N secondes (10) |
+| `introAllRadius` | Rayon en blocs de « se présenter à tous les proches » et de « montrer mes papiers aux proches » (10) |
+| `postDebriefToDiscord` / `debriefWebhookUrl` | Envoi du débrief de fin de partie sur Discord / webhook dédié (vide = webhook du journal staff) |
+| `debriefAutoOpen` | Ouvre l'écran de débrief chez tous les joueurs à la fin de la partie |
+| `giveIdentityPaper` | Donne des papiers d'identité vierges à chaque participant au début de la partie (s'il n'en a pas déjà) |
 
 Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cours, file d'envoi vers le Worker) : `config/watherp-data.json`. Chats intégrés : `config/watherp-chats.json`.
 
@@ -47,6 +53,8 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 | `/r note <joueur> <texte>` | staff | Note privée (le joueur n'est pas prévenu) |
 | `/r records <joueur>` | staff | Liste ses avertissements / notes dans le chat |
 | `/r record delete <id>` | OP (niv. 2) | Supprime un dossier |
+| `/rpdebrief` | tous | Rouvre le débrief de la dernière partie terminée (écran) |
+| `/r papiers <joueur>` | staff | Donne des papiers d'identité vierges à un joueur |
 | `/r voirpseudo` | staff | Bascule : voir les vrais pseudos en partie (sinon rien n'est affiché pour les joueurs non présentés) |
 | `/r names player <joueur>` / `/r names rp <nom>` | staff | Historique des noms RP (depuis le Worker) d'un joueur / qui a porté ce nom |
 | `/r webhook set <url>` · `clear` · `status` · `test` | OP (niv. 2) | Webhook Discord des tickets, sans éditer le fichier. L'URL est validée (webhook Discord uniquement) et jamais réaffichée en entier |
@@ -63,7 +71,7 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 - Les permissions sont lues à la connexion puis rafraîchies (cache 3 min) ; si le Worker est injoignable, le dernier cache est gardé, jamais de permission « par défaut ».
 
 ## Touches (modifiables dans Options → Contrôles → Wathe RP)
-`H` **Aide** (menu d'aide, aussi bouton « Aide » en haut à droite du menu pause) · `G` **menu de commandes** (invite de commande seule, pour tous) · `Y` **Messagerie** (ouvre aussi directement le chat d'une popup d'invitation) · `N` panneau d'assistance (helper) — **le curseur est directement dans le champ de commande en bas du panneau** : tapez la commande (le `/` est facultatif), Entrée pour l'envoyer, ↑/↓ pour l'historique. Le retour du serveur s'affiche sous le champ. Les boutons « Avertir… » / « Note… » pré-remplissent `/r warn <pseudo> ` (marche aussi pour l'auteur d'un ticket déjà déconnecté). « Se téléporter » sur un ticket dont l'auteur est parti vous amène là où il a fait sa demande · `J` accepter une présentation · `K` se présenter sous pseudonyme.
+`H` **Aide** (menu d'aide, aussi bouton « Aide » en haut à droite du menu pause) · `G` **menu de commandes** (invite de commande seule, pour tous) · `Y` **Messagerie** (ouvre aussi directement le chat d'une popup d'invitation) · `N` panneau d'assistance (helper) — **le curseur est directement dans le champ de commande en bas du panneau** : tapez la commande (le `/` est facultatif), Entrée pour l'envoyer, ↑/↓ pour l'historique. Le retour du serveur s'affiche sous le champ. Les boutons « Avertir… » / « Note… » pré-remplissent `/r warn <pseudo> ` (marche aussi pour l'auteur d'un ticket déjà déconnecté). « Se téléporter » sur un ticket dont l'auteur est parti vous amène là où il a fait sa demande · `J` accepter une présentation · `K` se présenter sous pseudonyme · `U` **se présenter à tous les proches** · `O` **carnet de contacts**.
 
 ## Tickets anonymes, suppression
 - Ticket **anonymisé** : ni pseudo, ni nom RP, ni UUID, ni position ne sont envoyés aux helpers (le serveur n'envoie aucune de ces données au client) ni à Discord. Téléportation et avertissement impossibles tant qu'il est anonyme.
@@ -74,6 +82,26 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 - **Helper** : menu « Chat intégré » (onglet du panneau ou touche `Y`) : chat direct avec n'importe quel joueur en ligne (popup chez lui avec la touche pour ouvrir), **chat helper** commun, création / fermeture de **groupes**, **Ajouter…** des membres à un chat (ils reçoivent la même popup).
 - **Joueur** : retrouve ses chats avec la touche `Y` tant que le staff ne les a pas fermés ; un chat fermé disparaît de sa liste et reste lisible (lecture seule) pour les helpers membres.
 - Tout est vérifié côté serveur (membres, fermeture, anonymat). Historique persistant (300 lignes / chat).
+
+## Présentation de groupe (touche `U`)
+Pratique dans un wagon : un seul menu pour se présenter, avec **le même nom RP ou le même pseudonyme**, à tous les joueurs à moins de `introAllRadius` blocs (10 par défaut) que l'on ne connaît pas encore. Chaque personne reçoit sa **propre proposition** (60 s, comme d'habitude) et peut accepter, refuser ou répondre sous pseudonyme. Les personnes déjà présentées ou avec une demande en attente sont ignorées. Le même choix est proposé en bas du menu du clic droit sur un joueur.
+
+## Carnet de contacts (touche `O`)
+Liste tous ceux que votre personnage connaît (présentation menée au bout) : nom ou pseudonyme sous lequel vous les connaissez, **sous quel nom ils vous connaissent**, les autres noms qu'ils vous ont montrés (pseudonyme puis vrai nom), statut en ligne, recherche, et des **notes privées** (500 caractères, enregistrées automatiquement). Tout est calculé côté serveur : on ne voit que ce que son personnage sait. Les notes et le carnet sont **effacés à la fin de la partie**. Le bouton « Débrief » mène à l'écran de débrief.
+
+## Journal staff Discord des présentations
+Chaque présentation menée au bout, chaque révélation de vrai nom et chaque présentation de papiers sont envoyées sur le webhook du journal staff (`logWebhookUrl`, sinon `webhookUrl`), regroupées en un embed toutes les 10 s, avec **le pseudo Minecraft ET le nom RP réel** des deux joueurs :
+`🎭 Pseudo (Nom RP) s'est présenté à Pseudo2 (Nom RP2) sous le pseudonyme « X » (vrai nom : …)` · `🔓 … a révélé son vrai nom … à …, qui le connaissait sous « X »` · `🪪 … a montré ses papiers … ⚠️ (différent de son vrai nom RP)`. Utile pour arbitrer les litiges de rôle. Désactivable avec `logIntroductions`.
+
+## Débrief de fin de partie
+À la fin de la partie (évènement Wathe de fin), le serveur construit le débrief **avant** d'effacer l'état RP : durée, vrais noms, pseudonymes utilisés, **qui a menti à qui** (et si/quand le mensonge a été révélé, avec la mention « a pris le nom de … » quand un joueur s'est fait passer pour un autre), qui s'est révélé. Il s'ouvre en **écran** chez tous les joueurs (3 onglets : Identités / Mensonges / Révélations ; `/rpdebrief` pour le rouvrir tant que la partie suivante n'a pas commencé) et part en **3 embeds Discord** (`postDebriefToDiscord`). Si un autre écran est ouvert chez un joueur (chat, panneau d'aide), il n'est pas remplacé : une notification apparaît dans le centre des notifications.
+
+## Papiers d'identité (objet `watherp:identity_paper`)
+- Obtenus au début de la partie (`giveIdentityPaper`), via `/r papiers <joueur>`, `/give @s watherp:identity_paper` ou l'onglet créatif Outils / Équipement de Wathe.
+- **Clic droit dans le vide** : fiche d'identité avec le **skin du titulaire à gauche** (style des fiches suspect) et les champs **Nom, Âge, Profession, Provenance, Destination, Signe particulier**. Un papier vierge s'ouvre directement en modification (nom RP pré-rempli) ; le titulaire peut ensuite cliquer **Modifier**.
+- **Clic droit sur un joueur** (papiers en main) : il voit la fiche en lecture seule, avec « Papiers montrés par … » s'il vous connaît. Bouton **Montrer aux proches** : tous les joueurs dans `introAllRadius`.
+- Seul le titulaire modifie ses papiers ; un papier volé s'ouvre en lecture seule. Le nom inscrit n'est pas vérifié (on peut mentir sur ses papiers), mais le **journal staff signale ⚠️** quand le nom montré diffère du vrai nom RP du porteur (faux papiers, papiers volés).
+- Les papiers ne sont **pas** une présentation : montrer ses papiers ne fait pas « connaître » la personne dans le carnet.
 
 ## Notifications
 - Quand le menu de chat n'est pas ouvert, chaque nouveau message affiche une popup avec la touche Messagerie **lue dans tes réglages** (la touche ouvre directement ce chat). Au plus 3 popups à la fois (les plus anciennes partent), disparition au bout de 6 s (invitations : 20 s ; alertes staff : 8 s).
@@ -99,6 +127,8 @@ Chaque nom RP défini (saisi, conservé ou imposé par le staff) et chaque pseud
 Installation : voir `worker/INTEGRATION.md` (redéployer `rp-names.js`, qui accepte la clé d'appairage), puis `/relink connect <code>`.
 
 ## Statut / limites
+- **Version 1.2 (journal Discord des présentations, présentation de groupe, carnet de contacts, débrief, papiers d'identité)** : code ajouté sans accès à Maven/Mojang → **non compilé ni testé en jeu**. Points à valider au premier build : `DrawContext.drawTexture` (variante à 11 arguments, rendu du skin de la fiche), `SkinTextures.Model` / `PlayerListEntry#getSkinTextures`, `EditBoxWidget` (notes du carnet), `ItemGroupEvents` sur `WatheItems.EQUIPMENT_GROUP`, et le fait que Wathe n'efface pas les objets donnés à `ON_FINISH_INITIALIZE`.
+- Le carnet, les notes et le débrief ne survivent pas à un redémarrage du serveur en pleine partie (les présentations ne sont pas sauvegardées) ; le journal des évènements l'est, donc le débrief reste généré.
 - **Version 1.1 (tickets anonymes, chats, permissions Worker, menu Aide/commandes, règles de noms)** : syntaxe vérifiée (javac, hors résolution des classes Minecraft), Worker testé (`node worker/test-rp-names.mjs`), mais **non compilé ni testé en jeu**. Points à valider au premier build : `ScreenEvents.AFTER_INIT` + `Screens.getButtons` (bouton Aide du menu pause), `TextFieldWidget.setTextPredicate`, `Screen.shouldCloseOnEsc`.
 - Touches par défaut : H, G, Y (modifiables). Si elles gênent un autre mod, changez-les dans Options → Contrôles.
 - Le chat intégré liste les joueurs **en ligne** pour « Nouveau chat » / « Ajouter » ; le chat depuis un ticket marche aussi pour un auteur hors ligne (popup à sa connexion).

@@ -22,6 +22,7 @@ public class WatheRP implements ModInitializer {
         Chats.load();
         Net.registerTypes();
         ServerNet.register();
+        IdentityItems.register(); // papiers d'identité (serveur ET client : l'objet doit exister des deux côtés)
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> Commands.register(dispatcher));
 
@@ -31,6 +32,7 @@ public class WatheRP implements ModInitializer {
             Records.tick(server);
             Relink.tick();
             Chats.tick();
+            IntroLog.tick();
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
@@ -43,6 +45,7 @@ public class WatheRP implements ModInitializer {
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             Relink.shutdown(); // online=false (au mieux)
+            IntroLog.flush();
             Chats.saveNow();
             RpHistory.setServer(null);
         });

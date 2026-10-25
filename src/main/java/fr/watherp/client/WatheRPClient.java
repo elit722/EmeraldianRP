@@ -32,7 +32,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Set;
 
 public class WatheRPClient implements ClientModInitializer {
-    public static KeyBinding panelKey, acceptKey, aliasKey, helpKey, commandsKey, chatsKey;
+    public static KeyBinding panelKey, acceptKey, aliasKey, helpKey, commandsKey, chatsKey, contactsKey, introAllKey;
 
     /**
      * Objets Wathe avec lesquels un clic droit sur un joueur NE déclenche PAS la présentation : tous les autres objets Wathe
@@ -53,6 +53,8 @@ public class WatheRPClient implements ClientModInitializer {
         helpKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.help", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_H, "category.watherp"));
         commandsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.commands", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.watherp"));
         chatsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.chats", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Y, "category.watherp"));
+        contactsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.contacts", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.watherp"));
+        introAllKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.introall", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.watherp"));
 
         // ---------------- réception des paquets serveur -> client
         ClientPlayNetworking.registerGlobalReceiver(Net.OpenName.ID, (payload, ctx) -> {
@@ -104,6 +106,35 @@ public class WatheRPClient implements ClientModInitializer {
             ClientRp.onAliasList(payload.aliased());
         });
         ClientPlayNetworking.registerGlobalReceiver(Net.Revealed.ID, (payload, ctx) -> ClientRp.onRevealed(payload));
+
+        // ---- carnet de contacts
+        ClientPlayNetworking.registerGlobalReceiver(Net.Contacts.ID, (payload, ctx) -> {
+            ClientRp.contacts = new java.util.ArrayList<>(payload.list());
+            if (ctx.client().currentScreen instanceof ContactsScreen s) s.refreshList();
+        });
+
+        // ---- débrief de fin de partie
+        ClientPlayNetworking.registerGlobalReceiver(Net.Debrief.ID, (payload, ctx) -> {
+            ClientRp.debrief = payload;
+            MinecraftClient mc = ctx.client();
+            var cur = mc.currentScreen;
+            boolean free = cur == null || cur instanceof GameMenuScreen || cur instanceof NameEntryScreen || cur instanceof DebriefScreen;
+            if (!payload.auto() || free) {
+                mc.setScreen(new DebriefScreen());
+            } else {
+                // un autre écran est ouvert (chat, panneau d'aide…) : on ne le remplace pas, on prévient
+                ClientRp.addNotif("debrief", 0, "Débrief de la partie disponible", "Clic : ouvrir le débrief");
+                ClientRp.playPing(1.1f);
+            }
+        });
+
+        // ---- papiers d'identité (les siens, ou ceux qu'un autre joueur nous montre)
+        ClientPlayNetworking.registerGlobalReceiver(Net.OpenIdentity.ID, (payload, ctx) -> {
+            var cur = ctx.client().currentScreen;
+            if (cur instanceof NameEntryScreen) return; // ne pas masquer le menu de nom RP obligatoire
+            if (cur instanceof IdentityScreen s && s.isEditing()) return; // ne pas écraser une saisie en cours
+            ctx.client().setScreen(new IdentityScreen(payload.editable(), payload.shownBy(), payload.identity()));
+        });
 
         ClientPlayNetworking.registerGlobalReceiver(Net.Proposal.ID, (payload, ctx) -> ClientRp.onProposal(payload));
         ClientPlayNetworking.registerGlobalReceiver(Net.ProposalGone.ID, (payload, ctx) -> ClientRp.onProposalGone(payload.id()));
@@ -190,6 +221,12 @@ public class WatheRPClient implements ClientModInitializer {
             while (commandsKey.wasPressed()) {
                 if (mc.currentScreen == null) mc.setScreen(new CommandScreen());
             }
+            while (contactsKey.wasPressed()) {
+                if (mc.currentScreen == null) openContacts(mc);
+            }
+            while (introAllKey.wasPressed()) {
+                if (mc.currentScreen == null && canIntroduceAll(mc)) mc.setScreen(new IntroduceScreen(null));
+            }
             while (chatsKey.wasPressed()) {
                 if (mc.currentScreen != null) continue;
                 // une popup (invitation ou message) active : la touche ouvre directement ce chat
@@ -237,6 +274,22 @@ public class WatheRPClient implements ClientModInitializer {
         }).onCancel(() -> ClientRp.resumeProp(id)));
     }
 
+    /** Ouvre le carnet de contacts (l'écran demande lui-même sa liste au serveur). */
+    public static void openContacts(MinecraftClient mc) {
+        mc.setScreen(new ContactsScreen());
+    }
+
+    /** Redemande le débrief de la dernière partie (le serveur répond par l'écran, ou par un message s'il n'y en a pas). */
+    public static void requestDebrief() {
+        ClientPlayNetworking.send(new Net.RequestDebrief());
+    }
+
+    /** Se présenter à tous les proches : en partie, pour un vrai participant. */
+    private static boolean canIntroduceAll(MinecraftClient mc) {
+        PlayerEntity me = mc.player;
+        return me != null && !me.isSpectator() && !me.isCreative() && ClientRp.gameRunning();
+    }
+
     /** Demande au serveur d'ouvrir le menu « Aide » (il renvoie les types de demande acceptés). */
     public static void requestHelp() {
         ClientPlayNetworking.send(new Net.RequestHelp());
@@ -254,6 +307,8 @@ public class WatheRPClient implements ClientModInitializer {
         // une seule présentation par personne : déjà présentés = le clic droit reste un clic droit normal (le serveur revérifie)
         if (ClientRp.known.containsKey(target.getUuid())) return false;
         ItemStack held = me.getMainHandStack();
+        // papiers d'identité en main : le clic droit sur un joueur les lui montre (action de l'objet), pas de présentation
+        if (held.getItem() instanceof fr.watherp.IdentityPaperItem) return false;
         if (!held.isEmpty()) {
             Identifier id = Registries.ITEM.getId(held.getItem());
             if (id.getNamespace().equals("wathe") && !RIGHT_CLICK_OK.contains(id.getPath())) return false;

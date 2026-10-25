@@ -121,6 +121,7 @@ public class NotifCenterScreen extends Screen {
             case "staff" -> Ui.RED;
             case "invite", "proposal" -> Ui.GREEN;
             case "reveal", "revealed" -> Ui.ACCENT;
+            case "debrief" -> Ui.YELLOW;
             default -> Ui.AQUA;
         };
     }
@@ -161,6 +162,8 @@ public class NotifCenterScreen extends Screen {
                         if (client != null) client.setScreen(new RevealScreen());
                     } else if ("revealed".equals(n.kind())) {
                         // information seule : quelqu'un vient de nous révéler son vrai nom
+                    } else if ("debrief".equals(n.kind())) {
+                        if (client != null && ClientRp.debrief != null) client.setScreen(new DebriefScreen());
                     } else if (client != null) {
                         client.setScreen(new ChatsScreen(n.chat()));
                     }
