@@ -3,6 +3,7 @@ package fr.watherp.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import fr.watherp.net.Net;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -26,8 +27,48 @@ import java.util.function.IntSupplier;
  * en évidence. La tranche du haut est « Annuler ». Relâcher sans avoir rien survolé ne fait rien.
  */
 public class RadialMenuScreen extends Screen {
-    /** Une entrée de la roue. */
-    public record Entry(String label, String hint, int color, IntSupplier badge, Consumer<MinecraftClient> action) {}
+    /**
+     * Une entrée de la roue. {@code special} : la tranche prend sa propre couleur (comme « Annuler » est rouge) ;
+     * sinon {@code color} ne sert qu'aux accents.
+     */
+    public record Entry(String label, String hint, int color, IntSupplier badge, Consumer<MinecraftClient> action, boolean special) {
+        public Entry(String label, String hint, int color, IntSupplier badge, Consumer<MinecraftClient> action) {
+            this(label, hint, color, badge, action, false);
+        }
+    }
+
+    /** Couleurs des tranches spéciales (menus de Wathe). */
+    private static final int WATHE_CONFIG_COLOR = 0xFFB57BEE, WATHE_SKINS_COLOR = 0xFFF0903C;
+    private static final String WATHE_ADMIN_SCREEN = "dev.doctor4t.wathe.client.gui.screen.ingame.AdminMenuScreen";
+    private static final String WATHE_SKINS_SCREEN = "dev.doctor4t.wathe.client.gui.screen.ingame.SkinSelectionScreen";
+
+    /** Wathe est présent ET sa version contient cet écran (la classe existe) : sinon la tranche n'apparaît pas. */
+    private static boolean watheHas(String className) {
+        if (!FabricLoader.getInstance().isModLoaded("wathe")) return false;
+        try {
+            Class.forName(className, false, RadialMenuScreen.class.getClassLoader());
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Ouvre un écran de Wathe (constructeur sans argument), par réflexion : aucune dépendance dure à une version précise. */
+    private static void openWathe(MinecraftClient mc, String className) {
+        try {
+            mc.setScreen((Screen) Class.forName(className).getDeclaredConstructor().newInstance());
+        } catch (Throwable t) {
+            fr.watherp.WatheRP.LOGGER.warn("Roue des menus : impossible d'ouvrir {} ({})", className, t.toString());
+        }
+    }
+
+    /** Couleur de fond d'une tranche spéciale : sa couleur assombrie (au repos) ou franche (en évidence). */
+    private static int tint(int color, boolean hover) {
+        if (hover) return 0xE0000000 | (color & 0xFFFFFF);
+        int r = (int) (((color >> 16) & 255) * 0.30 + 0x14 * 0.70), g = (int) (((color >> 8) & 255) * 0.30 + 0x14 * 0.70),
+            b = (int) ((color & 255) * 0.30 + 0x18 * 0.70);
+        return 0xC0000000 | (r << 16) | (g << 8) | b;
+    }
 
     private static final double TAU = Math.PI * 2;
 
@@ -72,6 +113,17 @@ public class RadialMenuScreen extends Screen {
             mc.setScreen(null);
             WatheRPClient.requestDebrief();
         }));
+        // menus de Wathe (seulement si la version de Wathe installée les contient)
+        if (watheHas(WATHE_SKINS_SCREEN)) {
+            l.add(new Entry("Skins d'armes", "Menu des skins d'armes (Wathe)", WATHE_SKINS_COLOR, () -> 0,
+                mc -> openWathe(mc, WATHE_SKINS_SCREEN), true));
+        }
+        var me = MinecraftClient.getInstance().player;
+        // même règle que la touche d'admin de Wathe : niveau d'opérateur 2
+        if (me != null && me.hasPermissionLevel(2) && watheHas(WATHE_ADMIN_SCREEN)) {
+            l.add(new Entry("Config partie", "Game config : menu admin de Wathe", WATHE_CONFIG_COLOR, () -> 0,
+                mc -> openWathe(mc, WATHE_ADMIN_SCREEN), true));
+        }
         if (ClientRp.helper) {
             l.add(new Entry("Panneau staff", "Tickets, dossiers, chat staff", Ui.RED, () -> 0, mc -> {
                 mc.setScreen(null);
@@ -150,6 +202,7 @@ public class RadialMenuScreen extends Screen {
             boolean hov = i == hovered;
             int base;
             if (i == 0) base = hov ? 0xE0E05555 : 0xC03A1A1C;
+            else if (entries.get(i - 1).special()) base = tint(entries.get(i - 1).color(), hov);
             else base = hov ? 0xE0C5AE8B : 0xC0141418;
             float out = hov ? r1 + 5 : r1;
             sector(c, cx, cy, r0, out, mid - w / 2 + gap, mid + w / 2 - gap, Ui.alpha(base, an));
@@ -163,7 +216,7 @@ public class RadialMenuScreen extends Screen {
             boolean hov = i == hovered;
             String label = i == 0 ? "Annuler" : entries.get(i - 1).label();
             int color = hov ? (i == 0 ? Ui.RED : Ui.ACCENT) : Ui.TEXT;
-            if (i > 0 && !hov) color = Ui.TEXT;
+            if (i > 0 && entries.get(i - 1).special()) color = entries.get(i - 1).color();
             double s = Math.sin(mid), co = Math.cos(mid);
             float rr = r1 + (hov ? 12 : 8);
             int lx = Math.round(cx + (float) (rr * s)), ly = Math.round(cy - (float) (rr * co));
@@ -194,7 +247,7 @@ public class RadialMenuScreen extends Screen {
             Entry e = entries.get(hovered - 1);
             title = e.label();
             sub = e.hint();
-            tcol = Ui.ACCENT;
+            tcol = e.special() ? e.color() : Ui.ACCENT;
         } else {
             title = "Menus";
             sub = "Bougez la souris";
