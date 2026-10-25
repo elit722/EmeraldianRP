@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Menu « Révéler mon nom » (centre des notifications) : les personnes à qui on s'est présenté SOUS PSEUDONYME,
+ * Menu « Révéler mon nom » (carnet de contacts) : les personnes à qui on s'est présenté SOUS PSEUDONYME,
  * avec un bouton pour leur révéler son vrai nom RP. La liste vient du serveur (ClientRp.aliased) et se met à jour toute seule.
  */
 public class RevealScreen extends Screen {
@@ -37,7 +37,7 @@ public class RevealScreen extends Screen {
         y0 = (height - H) / 2;
         btns.clear();
         btns.add(new Btn(x0 + 14, y0 + H - 32, W - 28, 20, "Retour", Ui.ACCENT, () -> {
-            if (client != null) client.setScreen(new NotifCenterScreen());
+            if (client != null) client.setScreen(new ContactsScreen());
         }));
     }
 

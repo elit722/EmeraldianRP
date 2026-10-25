@@ -78,14 +78,26 @@ public final class Commands {
             .then(literal("reset").requires(s -> Perms.has(s, Perms.NAME_FORCE))
                 .then(literal("name").then(argument("player", StringArgumentType.string()).suggests(PLAYERS)
                     .executes(Commands::resetName))))
+            // ancien nom de la commande : /r papiers <joueur> = /r billet donner <joueur>
             .then(literal("papiers").requires(Staff::isStaff)
-                .then(argument("player", EntityArgumentType.player()).executes(ctx -> {
-                    ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
-                    boolean ok = IdentityItems.give(target, true);
-                    ctx.getSource().sendFeedback(() -> ok ? Msg.ok("Papiers d'identité vierges donnés à " + target.getGameProfile().getName() + ".")
-                        : Msg.err("Inventaire plein."), false);
-                    return ok ? 1 : 0;
-                })))
+                .then(argument("player", EntityArgumentType.player()).executes(Commands::giveTicket)))
+            .then(literal("billet").requires(s -> Staff.isStaff(s) || Perms.has(s, Perms.BILLET))
+                .then(literal("donner").requires(Staff::isStaff)
+                    .then(argument("player", EntityArgumentType.player()).executes(Commands::giveTicket)))
+                // corrige UNE info du billet d'un joueur : /r billet modifier <joueur> <age|profession|signe|provenance|destination> <valeur|reset>
+                .then(literal("modifier").requires(s -> Perms.has(s, Perms.BILLET))
+                    .then(argument("player", EntityArgumentType.player())
+                        .then(argument("field", StringArgumentType.word()).suggests(TICKET_FIELDS)
+                            .then(argument("value", StringArgumentType.greedyString()).executes(Commands::editTicket)))))
+                // change la provenance / destination imposées sur TOUS les billets : /r billet fixe <provenance|destination> <valeur>
+                .then(literal("fixe").requires(s -> Perms.has(s, Perms.BILLET))
+                    .then(literal("provenance").then(argument("value", StringArgumentType.greedyString()).executes(ctx -> fixTicket(ctx, true))))
+                    .then(literal("destination").then(argument("value", StringArgumentType.greedyString()).executes(ctx -> fixTicket(ctx, false))))
+                    .then(literal("statut").executes(ctx -> {
+                        ctx.getSource().sendFeedback(() -> Msg.info("Billets : provenance « " + Identity.defaultFrom() + " », destination « "
+                            + Identity.defaultDestination() + " »."), false);
+                        return 1;
+                    }))))
             .then(literal("voirpseudo").requires(s -> Perms.has(s, Perms.PSEUDO_SEE)).executes(Commands::toggleSeePseudo))
             .then(literal("warn").requires(s -> Perms.has(s, Perms.WARN))
                 .then(argument("player", StringArgumentType.string()).suggests(PLAYERS)
@@ -174,6 +186,54 @@ public final class Commands {
             ctx.getSource().sendFeedback(() -> Msg.err(err), false);
             return 0;
         }
+        return 1;
+    }
+
+    private static final com.mojang.brigadier.suggestion.SuggestionProvider<ServerCommandSource> TICKET_FIELDS =
+        (ctx, b) -> net.minecraft.command.CommandSource.suggestMatching(IdentityItems.FIELDS, b);
+
+    private static int giveTicket(com.mojang.brigadier.context.CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+        boolean ok = IdentityItems.give(target, true);
+        ctx.getSource().sendFeedback(() -> ok ? Msg.ok("Billet de train vierge donné à " + target.getGameProfile().getName() + ".")
+            : Msg.err("Inventaire plein."), false);
+        return ok ? 1 : 0;
+    }
+
+    /** /r billet modifier <joueur> <champ> <valeur|reset> : corrige une info du billet d'un joueur. */
+    private static int editTicket(com.mojang.brigadier.context.CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "player");
+        String field = StringArgumentType.getString(ctx, "field").toLowerCase(java.util.Locale.ROOT);
+        String raw = StringArgumentType.getString(ctx, "value").trim();
+        if (!IdentityItems.FIELDS.contains(field)) {
+            ctx.getSource().sendFeedback(() -> Msg.err("Champ inconnu « " + field + " » : " + String.join(", ", IdentityItems.FIELDS)
+                + " (le nom se change avec /r forcechange name)."), false);
+            return 0;
+        }
+        boolean reset = raw.equalsIgnoreCase("reset") || raw.equals("-");
+        String value = reset ? "" : raw;
+        int n = IdentityItems.adminSet(target, field, value);
+        String who = target.getGameProfile().getName();
+        if (n == 0) {
+            ctx.getSource().sendFeedback(() -> Msg.err(who + " n'a aucun billet de train dans son inventaire."), false);
+            return 0;
+        }
+        ctx.getSource().sendFeedback(() -> Msg.ok("Billet de " + who + " : " + field + (reset ? " remis à zéro" : " = « " + Identity.clip(value, 80) + " »")
+            + (n > 1 ? " (" + n + " billets)" : "") + "."), true);
+        target.sendMessage(Msg.info("Un membre du staff a corrigé votre billet de train."), true);
+        return n;
+    }
+
+    /** /r billet fixe <provenance|destination> <valeur> : change la valeur imposée sur tous les billets. */
+    private static int fixTicket(com.mojang.brigadier.context.CommandContext<ServerCommandSource> ctx, boolean from) {
+        String value = Identity.clip(StringArgumentType.getString(ctx, "value"), from ? Identity.FROM_MAX : Identity.DEST_MAX);
+        if (value.isEmpty()) {
+            ctx.getSource().sendFeedback(() -> Msg.err("Valeur vide."), false);
+            return 0;
+        }
+        IdentityItems.setFixed(from, value);
+        ctx.getSource().sendFeedback(() -> Msg.ok((from ? "Provenance" : "Destination") + " de tous les billets : « " + value
+            + " » (les billets avec une exception propre, posée par /r billet modifier, ne changent pas)."), true);
         return 1;
     }
 

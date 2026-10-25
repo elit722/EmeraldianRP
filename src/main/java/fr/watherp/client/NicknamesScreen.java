@@ -15,7 +15,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Surnoms (menu des notifications) : on donne un surnom aux personnes qui se sont présentées à nous. Le surnom est celui qui
+ * Surnoms (carnet de contacts) : on donne un surnom aux personnes qui se sont présentées à nous. Le surnom est celui qui
  * s'affiche en jeu ; le nom sous lequel la personne s'est présentée (vrai nom ou pseudonyme) reste toujours consultable ici.
  */
 public class NicknamesScreen extends Screen {
@@ -75,11 +75,8 @@ public class NicknamesScreen extends Screen {
             nickField.setText("");
             saveNick();
         }));
-        btns.add(new Btn(x0 + 14, y0 + H - 32, 120, 20, "Carnet", Ui.AQUA, () -> {
+        btns.add(new Btn(x0 + 14, y0 + H - 32, W - 28, 20, "Retour au carnet", Ui.ACCENT, () -> {
             if (client != null) client.setScreen(new ContactsScreen());
-        }));
-        btns.add(new Btn(x0 + W - 14 - 120, y0 + H - 32, 120, 20, "Retour", Ui.ACCENT, () -> {
-            if (client != null) client.setScreen(new NotifCenterScreen());
         }));
 
         ClientPlayNetworking.send(new Net.RequestContacts());

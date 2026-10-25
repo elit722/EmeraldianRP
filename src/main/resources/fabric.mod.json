@@ -3,7 +3,7 @@
   "id": "watherp",
   "version": "${version}",
   "name": "Wathe RP",
-  "description": "Addon RolePlay pour Wathe : noms RP, présentations (individuelles ou de groupe), carnet de contacts, papiers d'identité, débrief de fin de partie, journal staff Discord et système d'aide (/aide) avec tickets.",
+  "description": "Addon RolePlay pour Wathe : noms RP, présentations (individuelles ou de groupe), carnet de contacts, billets de train, débrief de fin de partie, journal staff Discord et système d'aide (/aide) avec tickets.",
   "authors": ["Wathe RP"],
   "license": "ARR",
   "environment": "*",

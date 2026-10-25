@@ -87,14 +87,14 @@ public final class IntroLog {
     }
 
     /**
-     * {@code actor} montre des papiers d'identité à {@code other}. Le nom des papiers est toujours le nom RP de leur titulaire
-     * ({@code owner}) ; {@code learned} : {@code other} vient d'apprendre ce nom (papiers du porteur, le titulaire ne le connaît pas pour autant).
+     * {@code actor} montre un billet de train à {@code other}. Le nom du billet est toujours le nom RP de leur titulaire
+     * ({@code owner}) ; {@code learned} : {@code other} vient d'apprendre ce nom (billet du porteur, le titulaire ne le connaît pas pour autant).
      */
     public static void papers(UUID actor, UUID other, UUID owner, String nameOnPaper, boolean learned) {
         boolean own = owner.equals(actor);
-        add("🪪 " + who(actor) + " a montré " + (own ? "ses" : "les") + " **papiers d'identité** " + (own ? "" : "de " + who(owner) + " ")
+        add("🪪 " + who(actor) + " a montré " + (own ? "son" : "le") + " **billet de train** " + (own ? "" : "de " + who(owner) + " ")
             + "à " + who(other) + " : « " + Discord.esc(nameOnPaper) + " »"
             + (own ? (learned ? " — " + who(other) + " connaît maintenant son vrai nom" : " — déjà connu")
-                : " ⚠️ *(papiers d'un autre joueur : rien n'est appris)*") + ".");
+                : " ⚠️ *(billet d'un autre joueur : rien n'est appris)*") + ".");
     }
 }

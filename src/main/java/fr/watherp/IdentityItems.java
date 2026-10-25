@@ -18,7 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Enregistrement de l'objet « papiers d'identité » et logique serveur (consulter, remplir, montrer). */
+/** Enregistrement de l'objet « billet de train » (id technique : identity_paper) et logique serveur (consulter, remplir, montrer, correction par un admin). */
 public final class IdentityItems {
     private IdentityItems() {}
 
@@ -35,7 +35,7 @@ public final class IdentityItems {
             // aussi dans l'onglet « Équipement » de Wathe (où se trouvent les objets de jeu)
             ItemGroupEvents.modifyEntriesEvent(WatheItems.EQUIPMENT_GROUP).register(e -> e.add(PAPER));
         } catch (Throwable t) {
-            WatheRP.LOGGER.warn("Papiers d'identité : onglet Wathe introuvable ({})", t.toString());
+            WatheRP.LOGGER.warn("Billet de train : onglet Wathe introuvable ({})", t.toString());
         }
     }
 
@@ -43,7 +43,7 @@ public final class IdentityItems {
         return new ItemStack(PAPER);
     }
 
-    /** Vrai si le joueur a déjà des papiers d'identité dans son inventaire (ou en main). */
+    /** Vrai si le joueur a déjà un billet de train dans son inventaire (ou en main). */
     private static boolean hasPaper(ServerPlayerEntity p) {
         for (int i = 0; i < p.getInventory().size(); i++) {
             if (p.getInventory().getStack(i).getItem() instanceof IdentityPaperItem) return true;
@@ -51,28 +51,28 @@ public final class IdentityItems {
         return false;
     }
 
-    /** Donne des papiers vierges à un joueur (s'il n'en a pas déjà). @return false s'il en avait déjà ou si l'inventaire est plein. */
+    /** Donne un billet vierge à un joueur (s'il n'en a pas déjà). @return false s'il en avait déjà ou si l'inventaire est plein. */
     public static boolean give(ServerPlayerEntity p, boolean force) {
         if (PAPER == null) return false;
         if (!force && hasPaper(p)) return false;
         return p.getInventory().insertStack(newPaper());
     }
 
-    /** Début de partie : chaque participant reçoit des papiers vierges (option giveIdentityPaper). */
+    /** Début de partie : chaque participant reçoit un billet vierge (option giveIdentityPaper). */
     public static void giveToParticipants(MinecraftServer server) {
         if (!RpConfig.INSTANCE.giveIdentityPaper) return;
         for (ServerPlayerEntity p : RpGame.participants(server)) {
             try {
                 give(p, false);
             } catch (Throwable t) {
-                WatheRP.LOGGER.warn("Papiers d'identité : impossible d'en donner à {} ({})", p.getGameProfile().getName(), t.toString());
+                WatheRP.LOGGER.warn("Billet de train : impossible d'en donner à {} ({})", p.getGameProfile().getName(), t.toString());
             }
         }
     }
 
     // ---------------------------------------------------------------- consulter / remplir
 
-    /** Papiers d'identité tenus en main (principale puis secondaire), sinon null. */
+    /** Billet de train tenu en main (principale puis secondaire), sinon null. */
     private static ItemStack heldPaper(ServerPlayerEntity p) {
         ItemStack main = p.getStackInHand(Hand.MAIN_HAND);
         if (main.getItem() instanceof IdentityPaperItem) return main;
@@ -81,7 +81,7 @@ public final class IdentityItems {
         return null;
     }
 
-    /** Nom RP actuel du titulaire : c'est le seul nom qui puisse figurer sur des papiers (pas de faux papiers). */
+    /** Nom RP actuel du titulaire : c'est le seul nom qui puisse figurer sur un billet (pas de faux billets). */
     private static String ownerName(Identity id) {
         String n = RpGame.currentOrPrevious(id.owner());
         return n == null || n.isBlank() ? id.name() : n;
@@ -99,12 +99,12 @@ public final class IdentityItems {
     public static void save(ServerPlayerEntity p, Net.SaveIdentity in) {
         ItemStack stack = heldPaper(p);
         if (stack == null) {
-            p.sendMessage(Msg.err("Tenez vos papiers d'identité en main pour les modifier."), true);
+            p.sendMessage(Msg.err("Tenez votre billet de train en main pour le modifier."), true);
             return;
         }
         Identity cur = Identity.read(stack);
         if (!cur.isBlank() && !cur.owner().equals(p.getUuid())) {
-            p.sendMessage(Msg.err("Ces papiers ne sont pas les vôtres."), true);
+            p.sendMessage(Msg.err("Ce billet n'est pas le vôtre."), true);
             return;
         }
         // le nom est imposé : c'est votre nom RP (le champ « nom » envoyé par le client est ignoré)
@@ -113,10 +113,48 @@ public final class IdentityItems {
             p.sendMessage(Msg.err("Définissez d'abord votre nom RP."), true);
             return;
         }
+        // provenance et destination ne se saisissent pas : celles du billet (valeurs imposées ou exception décidée par un admin) sont conservées
         Identity n = Identity.of(p.getUuid(), p.getGameProfile().getName(), rp, in.age(), in.profession(),
-            in.provenance(), in.destination(), in.mark());
+            cur.provenance(), cur.destination(), in.mark());
         n.writeTo(stack);
-        p.sendMessage(Msg.ok("Papiers d'identité enregistrés au nom de « " + n.name() + " »."), true);
+        p.sendMessage(Msg.ok("Billet de train enregistré au nom de « " + n.name() + " »."), true);
+    }
+
+    // ---------------------------------------------------------------- correction par un admin
+
+    /** Champs qu'un admin peut corriger avec /r billet modifier (le nom RP, lui, se change avec /r forcechange). */
+    public static final java.util.List<String> FIELDS = java.util.List.of("age", "profession", "signe", "provenance", "destination");
+
+    /**
+     * Change une info des billets de {@code target} (ceux dont il est le titulaire ; à défaut, un billet vierge de son inventaire,
+     * qui lui est alors attribué). {@code value} vide = remise à zéro (pour provenance / destination : retour à la valeur imposée).
+     * @return le nombre de billets modifiés (0 : aucun billet dans son inventaire)
+     */
+    public static int adminSet(ServerPlayerEntity target, String field, String value) {
+        java.util.List<ItemStack> mine = new java.util.ArrayList<>(), blanks = new java.util.ArrayList<>();
+        for (int i = 0; i < target.getInventory().size(); i++) {
+            ItemStack st = target.getInventory().getStack(i);
+            if (!(st.getItem() instanceof IdentityPaperItem)) continue;
+            Identity id = Identity.read(st);
+            if (id.isBlank()) blanks.add(st);
+            else if (id.owner().equals(target.getUuid())) mine.add(st);
+        }
+        if (mine.isEmpty() && !blanks.isEmpty()) {
+            String rp = RpGame.currentOrPrevious(target.getUuid());
+            Identity claimed = Identity.read(blanks.get(0)).withOwner(target.getUuid(), target.getGameProfile().getName(), rp == null ? "" : rp);
+            claimed.writeTo(blanks.get(0));
+            mine.add(blanks.get(0));
+        }
+        for (ItemStack st : mine) Identity.read(st).withField(field, value).writeTo(st);
+        return mine.size();
+    }
+
+    /** Provenance / destination imposées à TOUS les billets (config). Un billet avec une exception propre n'est pas touché. */
+    public static void setFixed(boolean from, String value) {
+        String v = Identity.clip(value, from ? Identity.FROM_MAX : Identity.DEST_MAX);
+        if (from) RpConfig.INSTANCE.ticketFrom = v;
+        else RpConfig.INSTANCE.ticketDest = v;
+        RpConfig.save();
     }
 
     // ---------------------------------------------------------------- montrer
@@ -143,13 +181,13 @@ public final class IdentityItems {
     private static Identity filled(ServerPlayerEntity p, ItemStack stack) {
         Identity id = Identity.read(stack);
         if (id.isBlank() || id.name().isEmpty()) {
-            p.sendMessage(Msg.err("Vos papiers sont vierges : faites un clic droit dans le vide pour les remplir."), true);
+            p.sendMessage(Msg.err("Votre billet est vierge : faites un clic droit dans le vide pour le remplir."), true);
             return null;
         }
         return id;
     }
 
-    /** Clic droit sur un joueur : lui montrer ses papiers. */
+    /** Clic droit sur un joueur : lui montrer son billet. */
     public static void showTo(ServerPlayerEntity from, ServerPlayerEntity to, ItemStack stack) {
         if (to == from || to.isSpectator()) return;
         Identity id = filled(from, stack);
@@ -161,16 +199,16 @@ public final class IdentityItems {
         if (cooldown(from)) return;
         deliver(from, to, id);
         RpGame.Known k = RpGame.knowledgeOf(from.getUuid()).get(to.getUuid());
-        from.sendMessage(Msg.info("Vous montrez vos papiers à " + (k == null ? "cette personne" : k.name()) + "."), true);
+        from.sendMessage(Msg.info("Vous montrez votre billet à " + (k == null ? "cette personne" : k.name()) + "."), true);
     }
 
-    /** Bouton « Montrer aux joueurs proches » de l'écran des papiers. */
+    /** Bouton « Montrer aux joueurs proches » de l'écran du billet. */
     public static void showAll(ServerPlayerEntity from) {
         MinecraftServer server = from.getServer();
         ItemStack stack = heldPaper(from);
         if (server == null) return;
         if (stack == null) {
-            from.sendMessage(Msg.err("Tenez vos papiers d'identité en main."), true);
+            from.sendMessage(Msg.err("Tenez votre billet de train en main."), true);
             return;
         }
         Identity id = filled(from, stack);
@@ -184,6 +222,6 @@ public final class IdentityItems {
             n++;
         }
         from.sendMessage(n == 0 ? Msg.err("Personne à moins de " + (int) r + " blocs.")
-            : Msg.info("Vous montrez vos papiers à " + n + " personne" + (n > 1 ? "s" : "") + "."), true);
+            : Msg.info("Vous montrez votre billet à " + n + " personne" + (n > 1 ? "s" : "") + "."), true);
     }
 }

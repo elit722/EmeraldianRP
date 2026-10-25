@@ -28,6 +28,7 @@ public final class Perms {
     public static final String PSEUDO_SEE = "rp.pseudo.see";
     public static final String WEBHOOK = "rp.webhook";
     public static final String WORKER = "rp.worker";
+    public static final String BILLET = "rp.billet";
 
     /** Permissions déclarées au Worker (nom court + description affichée dans le panel). */
     public static final List<String[]> DECLARED = List.of(
@@ -39,7 +40,8 @@ public final class Perms {
         new String[]{NAMES_READ, "Consulter l'historique des noms RP (/r names)"},
         new String[]{PSEUDO_SEE, "Voir les vrais pseudos en partie (/r voirpseudo)"},
         new String[]{WEBHOOK, "Configurer le webhook Discord des tickets (/r webhook)"},
-        new String[]{WORKER, "Gérer la connexion au Worker ReLink (/relink, /r worker)"}
+        new String[]{WORKER, "Gérer la connexion au Worker ReLink (/relink, /r worker)"},
+        new String[]{BILLET, "Corriger le billet de train d'un joueur ou changer la provenance / destination de tous les billets (/r billet)"}
     );
 
     /** Le serveur est-il relié au Worker (url + clé + slug) ? Sert à désactiver le passe-droit OP. */

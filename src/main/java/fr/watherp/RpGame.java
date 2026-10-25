@@ -478,10 +478,10 @@ public final class RpGame {
             recordEvent("reveal", owner.getUuid(), viewer.getUuid(), cur.name(), false, real);
             IntroLog.reveal(owner.getUuid(), viewer.getUuid(), cur.name(), real);
             ServerPlayNetworking.send(viewer, new Net.Revealed(cur.name(), real));
-            viewer.sendMessage(Msg.ok(cur.name() + " vous montre ses papiers : " + real + "."), true);
+            viewer.sendMessage(Msg.ok(cur.name() + " vous montre son billet : " + real + "."), true);
         } else {
             recordEvent("papers", owner.getUuid(), viewer.getUuid(), real, false, real);
-            viewer.sendMessage(Msg.ok("Vous connaissez maintenant " + real + " (papiers d'identité)."), true);
+            viewer.sendMessage(Msg.ok("Vous connaissez maintenant " + real + " (billet de train)."), true);
         }
         RpData.save();
         syncKnowledge(viewer);

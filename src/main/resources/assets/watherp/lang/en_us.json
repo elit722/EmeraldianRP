@@ -8,5 +8,7 @@
   "key.watherp.chats": "Messagerie (chats privés)",
   "key.watherp.contacts": "Contact book",
   "key.watherp.introall": "Introduce yourself to everyone nearby",
-  "item.watherp.identity_paper": "Identity papers"
+  "item.watherp.identity_paper": "Train ticket",
+  "key.watherp.wheel": "Menu wheel (hold)",
+  "key.watherp.wheel2": "Menu wheel: extra key (optional, for a key combo)"
 }

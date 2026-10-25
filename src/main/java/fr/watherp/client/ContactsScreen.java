@@ -23,6 +23,7 @@ public class ContactsScreen extends Screen {
     private static final int W = 540, H = 330, ROW_H = 22, NOTE_MAX = 500;
 
     private final List<Btn> btns = new ArrayList<>();
+    private Btn revealBtn;
     private TextFieldWidget search;
     private EditBoxWidget noteBox;
     private List<Net.ContactEntry> shown = new ArrayList<>();
@@ -83,16 +84,23 @@ public class ContactsScreen extends Screen {
         if (keepNote != null) setNoteText(keepNote);
 
         btns.clear();
-        btns.add(new Btn(x0 + 14, y0 + H - 32, 120, 20, "Débrief", Ui.YELLOW, () -> {
+        int bw = (W - 28 - 24) / 4, by = y0 + H - 32;
+        btns.add(new Btn(x0 + 14, by, bw, 20, "Débrief", Ui.YELLOW, () -> {
             flushNote();
             close();
             WatheRPClient.requestDebrief();
         }));
-        btns.add(new Btn(x0 + 14 + 120 + 8, y0 + H - 32, 120, 20, "Surnoms", Ui.AQUA, () -> {
+        // menu pour révéler son vrai nom aux personnes à qui l'on s'est présenté sous pseudonyme
+        revealBtn = new Btn(x0 + 14 + (bw + 8), by, bw, 20, "Révéler nom", Ui.GREEN, () -> {
+            flushNote();
+            if (client != null) client.setScreen(new RevealScreen());
+        });
+        btns.add(revealBtn);
+        btns.add(new Btn(x0 + 14 + 2 * (bw + 8), by, bw, 20, "Surnoms", Ui.AQUA, () -> {
             flushNote();
             if (client != null) client.setScreen(new NicknamesScreen());
         }));
-        btns.add(new Btn(x0 + W - 14 - 120, y0 + H - 32, 120, 20, "Fermer", Ui.ACCENT, this::close));
+        btns.add(new Btn(x0 + 14 + 3 * (bw + 8), by, bw, 20, "Fermer", Ui.ACCENT, this::close));
 
         ClientPlayNetworking.send(new Net.RequestContacts());
         refreshList();
@@ -275,6 +283,14 @@ public class ContactsScreen extends Screen {
             }
         }
         for (Btn b : btns) Ui.button(c, tr, b.x, b.y, b.w, b.h, b.label, mx, my, b.enabled, b.accent);
+        // pastille : nombre de personnes à qui l'on peut révéler son vrai nom
+        int pending = ClientRp.aliased.size();
+        if (revealBtn != null && pending > 0) {
+            String n = String.valueOf(pending);
+            int pw = Math.max(12, tr.getWidth(n) + 6), px = revealBtn.x + revealBtn.w - pw + 3, py = revealBtn.y - 5;
+            c.fill(px, py, px + pw, py + 12, Ui.ACCENT);
+            c.drawText(tr, n, px + (pw - tr.getWidth(n)) / 2, py + 2, 0xFF000000, false);
+        }
     }
 
     @Override

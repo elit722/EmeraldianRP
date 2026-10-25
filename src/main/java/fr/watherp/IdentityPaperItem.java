@@ -16,9 +16,9 @@ import net.minecraft.world.World;
 import java.util.List;
 
 /**
- * Papiers d'identité.
- *  - clic droit dans le vide : les consulter (et les remplir / modifier si ce sont les siens ou s'ils sont vierges) ;
- *  - clic droit sur un joueur : lui montrer ses papiers (il voit la carte, avec le skin du titulaire à gauche).
+ * Billet de train (ancien « papiers d'identité »).
+ *  - clic droit dans le vide : le consulter (et le remplir / modifier si c'est le sien ou s'il est vierge) ;
+ *  - clic droit sur un joueur : lui montrer son billet (il voit la carte, avec le skin du titulaire à gauche).
  */
 public class IdentityPaperItem extends Item {
     public IdentityPaperItem(Settings settings) {
@@ -53,7 +53,7 @@ public class IdentityPaperItem extends Item {
     public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip, TooltipType type) {
         Identity id = Identity.read(stack);
         if (id.isBlank()) {
-            tooltip.add(Text.literal("Vierges : clic droit pour les remplir.").formatted(Formatting.GRAY));
+            tooltip.add(Text.literal("Vierge : clic droit pour le remplir.").formatted(Formatting.GRAY));
         } else {
             tooltip.add(Text.literal("Clic droit : consulter / modifier.").formatted(Formatting.GRAY));
         }

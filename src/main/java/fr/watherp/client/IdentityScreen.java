@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Papiers d'identité : une fiche d'identité sur papier, avec la « photo » (le skin du titulaire) à gauche et les
+ * Billet de train : une fiche sur papier, avec la « photo » (le skin du titulaire) à gauche et les
  * informations à droite. Le titulaire peut remplir / modifier les champs ; les autres joueurs voient la fiche en lecture seule.
  */
 public class IdentityScreen extends Screen {
@@ -43,7 +43,7 @@ public class IdentityScreen extends Screen {
     private int x0, y0, rowsY, colX, valX, valW;
 
     public IdentityScreen(boolean editable, String shownBy, Identity data) {
-        super(Text.literal("Papiers d'identité"));
+        super(Text.literal("Billet de train"));
         this.data = data;
         this.canEdit = editable;
         this.shownBy = shownBy == null ? "" : shownBy;
@@ -72,7 +72,8 @@ public class IdentityScreen extends Screen {
         rowsY = y0 + 84;
         for (int i = 0; i < 6; i++) fields[i] = null;
         if (editing) {
-            for (int i = 1; i < 6; i++) { // le nom (0) n'est pas modifiable : c'est votre nom RP
+            for (int i = 1; i < 6; i++) { // le nom (0) n'est pas modifiable (votre nom RP) ; provenance (3) et destination (4) sont imposées
+                if (i == 3 || i == 4) continue;
                 final int idx = i;
                 TextFieldWidget f = new TextFieldWidget(textRenderer, valX, rowY(i) - 1, valW, 12, Text.literal(LABELS[i]));
                 f.setDrawsBackground(false);
@@ -139,7 +140,7 @@ public class IdentityScreen extends Screen {
         close();
     }
 
-    /** Le nom des papiers est votre nom RP : sans nom RP, impossible de les remplir. */
+    /** Le nom du billet est votre nom RP : sans nom RP, impossible de le remplir. */
     private boolean canSave() {
         return vals[0] != null && !vals[0].trim().isEmpty();
     }
@@ -218,7 +219,7 @@ public class IdentityScreen extends Screen {
         var tr = textRenderer;
 
         // en-tête
-        String head = "PIÈCE D'IDENTITÉ  ·  SERVICE DES PASSAGERS";
+        String head = "BILLET DE TRAIN  ·  SERVICE DES PASSAGERS";
         small(c, head, x0 + (W - (int) (tr.getWidth(head) * 0.8f)) / 2, y0 + 14, LABEL, 0.8f);
         c.fill(x0 + 18, y0 + 28, x0 + W - 18, y0 + 29, INK);
         c.fill(x0 + 18, y0 + 31, x0 + W - 18, y0 + 32, DOT);
@@ -242,15 +243,15 @@ public class IdentityScreen extends Screen {
         c.getMatrices().scale(2f, 2f, 1f);
         c.drawText(tr, num, 0, 0, RED, false);
         c.getMatrices().pop();
-        if (!shownBy.isEmpty()) small(c, "Papiers montrés par " + shownBy, colX, y0 + 72, LABEL, 0.75f);
-        else if (editing) small(c, data.isBlank() ? "À remplir : le skin affiché est le vôtre" : "Modification de vos papiers", colX, y0 + 72, LABEL, 0.75f);
+        if (!shownBy.isEmpty()) small(c, "Billet montré par " + shownBy, colX, y0 + 72, LABEL, 0.75f);
+        else if (editing) small(c, data.isBlank() ? "À remplir : le skin affiché est le vôtre" : "Modification de votre billet", colX, y0 + 72, LABEL, 0.75f);
 
         // champs
         for (int i = 0; i < 6; i++) {
             int ry = rowY(i);
             small(c, LABELS[i].toUpperCase(), colX, ry + 2, LABEL, 0.8f);
             for (int dx = 0; dx < valW; dx += 3) c.fill(valX + dx, ry + 11, valX + dx + 1, ry + 12, DOT);
-            if (!editing || i == 0) {
+            if (!editing || i == 0 || i == 3 || i == 4) { // pas de champ de saisie : texte fixe
                 String v = vals[i] == null ? "" : vals[i];
                 if (i == 5) {
                     // le signe particulier peut tenir sur deux lignes
@@ -267,7 +268,7 @@ public class IdentityScreen extends Screen {
         if (editing && !canSave()) {
             small(c, "Définissez d'abord votre nom RP (/rpnom).", colX, rowY(5) + 26, RED, 0.75f);
         } else if (editing) {
-            small(c, "Le nom est votre nom RP : il ne se modifie pas.", colX, rowY(5) + 26, LABEL, 0.75f);
+            small(c, "Nom RP, provenance et destination : non modifiables.", colX, rowY(5) + 26, LABEL, 0.75f);
         }
         if (!editing && !canEdit && !data.isBlank()) {
             small(c, "Document présenté — lecture seule", colX, rowY(5) + 26, LABEL, 0.75f);

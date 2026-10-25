@@ -32,7 +32,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Set;
 
 public class WatheRPClient implements ClientModInitializer {
-    public static KeyBinding panelKey, acceptKey, aliasKey, helpKey, commandsKey, chatsKey, contactsKey, introAllKey;
+    public static KeyBinding panelKey, acceptKey, aliasKey, helpKey, commandsKey, chatsKey, contactsKey, introAllKey, wheelKey, wheelKey2;
 
     /**
      * Objets Wathe avec lesquels un clic droit sur un joueur NE déclenche PAS la présentation : tous les autres objets Wathe
@@ -42,6 +42,10 @@ public class WatheRPClient implements ClientModInitializer {
     private static final Set<String> RIGHT_CLICK_OK = Set.of("key", "note");
 
     private boolean prevUse = false;
+    /** La roue a déjà été ouverte pour la pression en cours : il faut relâcher avant de pouvoir la rouvrir. */
+    private boolean wheelLatch = false;
+    /** Action choisie en cliquant dans la roue alors que la touche est encore enfoncée : exécutée au relâchement. */
+    private static Runnable wheelPending = null;
 
     @Override
     public void onInitializeClient() {
@@ -55,6 +59,10 @@ public class WatheRPClient implements ClientModInitializer {
         chatsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.chats", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Y, "category.watherp"));
         contactsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.contacts", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_O, "category.watherp"));
         introAllKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.introall", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.watherp"));
+
+        // roue des menus : touche maintenue (+ touche complémentaire facultative pour faire un duo de touches)
+        wheelKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.wheel", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.watherp"));
+        wheelKey2 = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.watherp.wheel2", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.watherp"));
 
         // ---------------- réception des paquets serveur -> client
         ClientPlayNetworking.registerGlobalReceiver(Net.OpenName.ID, (payload, ctx) -> {
@@ -131,7 +139,7 @@ public class WatheRPClient implements ClientModInitializer {
             }
         });
 
-        // ---- papiers d'identité (les siens, ou ceux qu'un autre joueur nous montre)
+        // ---- billet de train (le sien, ou celui qu'un autre joueur nous montre)
         ClientPlayNetworking.registerGlobalReceiver(Net.OpenIdentity.ID, (payload, ctx) -> {
             var cur = ctx.client().currentScreen;
             if (cur instanceof NameEntryScreen) return; // ne pas masquer le menu de nom RP obligatoire
@@ -238,6 +246,20 @@ public class WatheRPClient implements ClientModInitializer {
                 if (inv != null) ClientRp.toasts.remove(inv);
                 mc.setScreen(new ChatsScreen(focus));
             }
+            // roue des menus (les touches sont lues directement : l'état normal des touches est remis à zéro à l'ouverture d'un écran)
+            while (wheelKey.wasPressed() || wheelKey2.wasPressed()) { /* on vide les appuis en attente */ }
+            boolean wheelDown = wheelHeld();
+            if (!wheelDown) {
+                wheelLatch = false;
+                if (wheelPending != null) {
+                    Runnable r = wheelPending;
+                    wheelPending = null;
+                    if (mc.currentScreen == null) r.run();
+                }
+            } else if (!wheelLatch && mc.currentScreen == null) {
+                wheelLatch = true;
+                mc.setScreen(new RadialMenuScreen());
+            }
             boolean use = mc.options.useKey.isPressed();
             if (use && !prevUse && mc.currentScreen == null && mc.crosshairTarget != null
                 && mc.crosshairTarget.getType() == HitResult.Type.ENTITY) {
@@ -277,6 +299,29 @@ public class WatheRPClient implements ClientModInitializer {
         }).onCancel(() -> ClientRp.resumeProp(id)));
     }
 
+    private static boolean keyDown(KeyBinding kb) {
+        if (kb == null || kb.isUnbound()) return false;
+        InputUtil.Key k = KeyBindingHelper.getBoundKeyOf(kb);
+        long handle = MinecraftClient.getInstance().getWindow().getHandle();
+        if (k.getCategory() == InputUtil.Type.MOUSE) return GLFW.glfwGetMouseButton(handle, k.getCode()) == GLFW.GLFW_PRESS;
+        return InputUtil.isKeyPressed(handle, k.getCode());
+    }
+
+    /** La touche de la roue (et la touche complémentaire, si elle est définie) est-elle maintenue ? */
+    public static boolean wheelHeld() {
+        if (wheelKey == null || wheelKey.isUnbound()) return false;
+        return keyDown(wheelKey) && (wheelKey2.isUnbound() || keyDown(wheelKey2));
+    }
+
+    /**
+     * Exécute l'action tout de suite si la roue est relâchée, sinon au relâchement : évite que la touche encore enfoncée
+     * (répétition) ne tape des lettres dans le champ du menu qu'on vient d'ouvrir.
+     */
+    public static void runAfterWheelRelease(Runnable r) {
+        if (!wheelHeld()) r.run();
+        else wheelPending = r;
+    }
+
     /** Ouvre le carnet de contacts (l'écran demande lui-même sa liste au serveur). */
     public static void openContacts(MinecraftClient mc) {
         mc.setScreen(new ContactsScreen());
@@ -288,7 +333,7 @@ public class WatheRPClient implements ClientModInitializer {
     }
 
     /** Se présenter à tous les proches : en partie, pour un vrai participant. */
-    private static boolean canIntroduceAll(MinecraftClient mc) {
+    static boolean canIntroduceAll(MinecraftClient mc) {
         PlayerEntity me = mc.player;
         return me != null && !me.isSpectator() && !me.isCreative() && ClientRp.gameRunning();
     }
@@ -308,10 +353,10 @@ public class WatheRPClient implements ClientModInitializer {
         if (!ClientRp.gameRunning()) return false;
         if (me.squaredDistanceTo(target) > 6 * 6) return false;
         // une seule présentation par personne : déjà présentés (dans les deux sens) = le clic droit reste un clic droit normal (le serveur revérifie).
-        // Si seul l'un des deux connaît l'autre (papiers d'identité vus), le menu reste ouvert aux deux.
+        // Si seul l'un des deux connaît l'autre (billet de train vu), le menu reste ouvert aux deux.
         if (ClientRp.mutual.contains(target.getUuid())) return false;
         ItemStack held = me.getMainHandStack();
-        // papiers d'identité en main : le clic droit sur un joueur les lui montre (action de l'objet), pas de présentation
+        // billet de train en main : le clic droit sur un joueur le lui montre (action de l'objet), pas de présentation
         if (held.getItem() instanceof fr.watherp.IdentityPaperItem) return false;
         if (!held.isEmpty()) {
             Identifier id = Registries.ITEM.getId(held.getItem());

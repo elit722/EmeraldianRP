@@ -15,7 +15,7 @@ public class NotifCenterScreen extends Screen {
 
     private int scroll = 0;
     private final List<Btn> btns = new ArrayList<>();
-    private Btn revealBtn;
+    private Btn carnetBtn;
     private long openTime;
     private int x0, y0;
 
@@ -30,24 +30,21 @@ public class NotifCenterScreen extends Screen {
         y0 = (height - H) / 2;
         ClientRp.unreadNotifs = 0;
         btns.clear();
-        int by = y0 + H - 32, bw = (W - 28 - 16) / 5;
+        int by = y0 + H - 32, bw = (W - 28 - 12) / 4;
         btns.add(new Btn(x0 + 14, by, bw, 20, "Messagerie", Ui.AQUA, () -> {
             if (client != null) client.setScreen(new ChatsScreen(-1));
         }));
-        // menu pour révéler son vrai nom aux personnes à qui l'on s'est présenté sous pseudonyme
-        revealBtn = new Btn(x0 + 14 + bw + 4, by, bw, 20, "Révéler nom", Ui.GREEN, () -> {
-            if (client != null) client.setScreen(new RevealScreen());
+        // révéler son nom et les surnoms se trouvent désormais dans le carnet de contacts
+        carnetBtn = new Btn(x0 + 14 + bw + 4, by, bw, 20, "Carnet", Ui.GREEN, () -> {
+            if (client != null) client.setScreen(new ContactsScreen());
         });
-        btns.add(revealBtn);
-        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Surnoms", Ui.AQUA, () -> {
-            if (client != null) client.setScreen(new NicknamesScreen());
-        }));
-        btns.add(new Btn(x0 + 14 + 3 * (bw + 4), by, bw, 20, "Tout effacer", Ui.RED, () -> {
+        btns.add(carnetBtn);
+        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Tout effacer", Ui.RED, () -> {
             ClientRp.notifs.clear();
             ClientRp.unread.clear();
             scroll = 0;
         }));
-        btns.add(new Btn(x0 + 14 + 4 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
+        btns.add(new Btn(x0 + 14 + 3 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
             if (client != null) client.setScreen(new CommandScreen());
         }));
     }
@@ -109,11 +106,11 @@ public class NotifCenterScreen extends Screen {
         c.disableScissor();
         c.drawText(tr, "Clic : ouvrir le chat, le panneau d'aide ou la révélation de nom", x0 + 14, y0 + H - 46, Ui.MUTED, false);
         for (Btn b : btns) Ui.button(c, tr, b.x, b.y, b.w, b.h, b.label, mx, my, b.enabled, b.accent);
-        // pastille : nombre de personnes à qui l'on peut révéler son vrai nom
+        // pastille : nombre de personnes à qui l'on peut révéler son vrai nom (la révélation se fait depuis le carnet)
         int pending = ClientRp.aliased.size();
-        if (revealBtn != null && pending > 0) {
+        if (carnetBtn != null && pending > 0) {
             String n = String.valueOf(pending);
-            int bw = Math.max(12, tr.getWidth(n) + 6), bx = revealBtn.x + revealBtn.w - bw + 3, byy = revealBtn.y - 5;
+            int bw = Math.max(12, tr.getWidth(n) + 6), bx = carnetBtn.x + carnetBtn.w - bw + 3, byy = carnetBtn.y - 5;
             c.fill(bx, byy, bx + bw, byy + 12, Ui.ACCENT);
             c.drawText(tr, n, bx + (bw - tr.getWidth(n)) / 2, byy + 2, 0xFF000000, false);
         }

@@ -69,6 +69,9 @@ public final class RpConfig {
     public boolean debriefAutoOpen = true;
     /** Donne des papiers d'identité vierges aux participants au début de la partie (s'ils n'en ont pas déjà). */
     public boolean giveIdentityPaper = true;
+    /** Provenance et destination imprimées sur TOUS les billets de train (non modifiables par les joueurs ; changeables avec /r billet fixe). */
+    public String ticketFrom = "PARIS";
+    public String ticketDest = "VIENNERAUDIA";
 
     /** Plafond absolu : c'est la limite relevée par EntitySelectorReaderMixin. */
     public static final int MAX_NAME_HARD = 32;
@@ -95,6 +98,8 @@ public final class RpConfig {
             if (INSTANCE.maxNameLength < INSTANCE.minNameLength) INSTANCE.maxNameLength = MAX_NAME_HARD;
             if (INSTANCE.helpTypes == null || INSTANCE.helpTypes.isEmpty()) INSTANCE.helpTypes = new ArrayList<>(List.of("autre"));
             if (INSTANCE.webhookUrl == null) INSTANCE.webhookUrl = "";
+            if (INSTANCE.ticketFrom == null || INSTANCE.ticketFrom.isBlank()) INSTANCE.ticketFrom = "PARIS";
+            if (INSTANCE.ticketDest == null || INSTANCE.ticketDest.isBlank()) INSTANCE.ticketDest = "VIENNERAUDIA";
             if (INSTANCE.workerUrl == null) INSTANCE.workerUrl = "";
             if (INSTANCE.workerApiKey == null) INSTANCE.workerApiKey = "";
             if (INSTANCE.serverSlug == null) INSTANCE.serverSlug = "";

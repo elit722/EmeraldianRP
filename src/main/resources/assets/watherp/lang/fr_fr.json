@@ -8,5 +8,7 @@
   "key.watherp.chats": "Messagerie (chats privés)",
   "key.watherp.contacts": "Carnet de contacts",
   "key.watherp.introall": "Se présenter à tous les proches",
-  "item.watherp.identity_paper": "Papiers d'identité"
+  "item.watherp.identity_paper": "Billet de train",
+  "key.watherp.wheel": "Roue des menus (maintenir)",
+  "key.watherp.wheel2": "Roue des menus : touche complémentaire (facultatif, pour un duo de touches)"
 }

@@ -32,7 +32,8 @@ Installer le jar dans `mods/` du serveur **et** des clients (avec Wathe 1.4.x et
 | `introAllRadius` | Rayon en blocs de « se présenter à tous les proches » et de « montrer mes papiers aux proches » (10) |
 | `postDebriefToDiscord` / `debriefWebhookUrl` | Envoi du débrief de fin de partie sur Discord / webhook dédié (vide = webhook du journal staff) |
 | `debriefAutoOpen` | Ouvre l'écran de débrief chez tous les joueurs à la fin de la partie |
-| `giveIdentityPaper` | Donne des papiers d'identité vierges à chaque participant au début de la partie (s'il n'en a pas déjà) |
+| `ticketFrom` / `ticketDest` | Provenance / destination imprimées sur tous les billets de train, non modifiables par les joueurs (`PARIS` / `VIENNERAUDIA`) ; se changent avec `/r billet fixe` |
+| `giveIdentityPaper` | Donne un billet de train vierge à chaque participant au début de la partie (s'il n'en a pas déjà) |
 
 Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cours, file d'envoi vers le Worker) : `config/watherp-data.json`. Chats intégrés : `config/watherp-chats.json`.
 
@@ -54,7 +55,9 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 | `/r records <joueur>` | staff | Liste ses avertissements / notes dans le chat |
 | `/r record delete <id>` | OP (niv. 2) | Supprime un dossier |
 | `/rpdebrief` | tous | Rouvre le débrief de la dernière partie terminée (écran) |
-| `/r papiers <joueur>` | staff | Donne des papiers d'identité vierges à un joueur |
+| `/r billet donner <joueur>` (ancien `/r papiers <joueur>`) | staff | Donne un billet de train vierge à un joueur |
+| `/r billet modifier <joueur> <age\|profession\|signe\|provenance\|destination> <valeur\|reset>` | permission `rp.billet` | Corrige UNE info du billet d'un joueur (billet dans son inventaire ; `reset` = remise à zéro / retour à la valeur imposée). Le nom RP se change avec `/r forcechange name` |
+| `/r billet fixe <provenance\|destination> <valeur>` · `/r billet fixe statut` | permission `rp.billet` | Change la provenance / destination imposées sur TOUS les billets (défaut `PARIS` → `VIENNERAUDIA`, clés `ticketFrom` / `ticketDest` de la config) |
 | `/r voirpseudo` | staff | Bascule : voir les vrais pseudos en partie (sinon rien n'est affiché pour les joueurs non présentés) |
 | `/r names player <joueur>` / `/r names rp <nom>` | staff | Historique des noms RP (depuis le Worker) d'un joueur / qui a porté ce nom |
 | `/r webhook set <url>` · `clear` · `status` · `test` | OP (niv. 2) | Webhook Discord des tickets, sans éditer le fichier. L'URL est validée (webhook Discord uniquement) et jamais réaffichée en entier |
@@ -71,7 +74,7 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 - Les permissions sont lues à la connexion puis rafraîchies (cache 3 min) ; si le Worker est injoignable, le dernier cache est gardé, jamais de permission « par défaut ».
 
 ## Touches (modifiables dans Options → Contrôles → Wathe RP)
-`H` **Aide** (menu d'aide, aussi bouton « Aide » en haut à droite du menu pause) · `G` **menu de commandes** (invite de commande seule, pour tous) · `Y` **Messagerie** (ouvre aussi directement le chat d'une popup d'invitation) · `N` panneau d'assistance (helper) — **le curseur est directement dans le champ de commande en bas du panneau** : tapez la commande (le `/` est facultatif), Entrée pour l'envoyer, ↑/↓ pour l'historique. Le retour du serveur s'affiche sous le champ. Les boutons « Avertir… » / « Note… » pré-remplissent `/r warn <pseudo> ` (marche aussi pour l'auteur d'un ticket déjà déconnecté). « Se téléporter » sur un ticket dont l'auteur est parti vous amène là où il a fait sa demande · `J` accepter une présentation · `K` se présenter sous pseudonyme · `U` **se présenter à tous les proches** · `O` **carnet de contacts**.
+`H` **Aide** (menu d'aide, aussi bouton « Aide » en haut à droite du menu pause) · `G` **menu de commandes** (invite de commande seule, pour tous) · `Y` **Messagerie** (ouvre aussi directement le chat d'une popup d'invitation) · `N` panneau d'assistance (helper) — **le curseur est directement dans le champ de commande en bas du panneau** : tapez la commande (le `/` est facultatif), Entrée pour l'envoyer, ↑/↓ pour l'historique. Le retour du serveur s'affiche sous le champ. Les boutons « Avertir… » / « Note… » pré-remplissent `/r warn <pseudo> ` (marche aussi pour l'auteur d'un ticket déjà déconnecté). « Se téléporter » sur un ticket dont l'auteur est parti vous amène là où il a fait sa demande · `J` accepter une présentation · `K` se présenter sous pseudonyme · `U` **se présenter à tous les proches** · `O` **carnet de contacts** · `V` **roue des menus** (voir ci-dessous).
 
 ## Tickets anonymes, suppression
 - Ticket **anonymisé** : ni pseudo, ni nom RP, ni UUID, ni position ne sont envoyés aux helpers (le serveur n'envoie aucune de ces données au client) ni à Discord. Téléportation et avertissement impossibles tant qu'il est anonyme.
@@ -96,14 +99,19 @@ Chaque présentation menée au bout, chaque révélation de vrai nom et chaque p
 ## Débrief de fin de partie
 À la fin de la partie (évènement Wathe de fin), le serveur construit le débrief **avant** d'effacer l'état RP : durée, vrais noms, pseudonymes utilisés, **qui a menti à qui** (et si/quand le mensonge a été révélé, avec la mention « a pris le nom de … » quand un joueur s'est fait passer pour un autre), qui s'est révélé. Il s'ouvre en **écran** chez tous les joueurs (3 onglets : Identités / Mensonges / Révélations ; `/rpdebrief` pour le rouvrir tant que la partie suivante n'a pas commencé) et part en **3 embeds Discord** (`postDebriefToDiscord`). Si un autre écran est ouvert chez un joueur (chat, panneau d'aide), il n'est pas remplacé : une notification apparaît dans le centre des notifications.
 
-## Papiers d'identité (objet `watherp:identity_paper`)
+## Billet de train (ex-papiers d'identité ; objet `watherp:identity_paper`, identifiant inchangé)
+- **Provenance et destination ne sont plus modifiables** : toujours `PARIS` et `VIENNERAUDIA` (config `ticketFrom` / `ticketDest`, commande `/r billet fixe`). Un admin peut poser une exception sur un billet précis avec `/r billet modifier`. Les anciennes valeurs saisies librement sont ignorées.
 - Obtenus au début de la partie (`giveIdentityPaper`), via `/r papiers <joueur>`, `/give @s watherp:identity_paper` ou l'onglet créatif Outils / Équipement de Wathe.
 - **Clic droit dans le vide** : fiche d'identité avec le **skin du titulaire à gauche** (style des fiches suspect) et les champs **Nom, Âge, Profession, Provenance, Destination, Signe particulier**. Le **nom n'est pas modifiable** : c'est toujours le nom RP actuel du titulaire (il suit même un `/r forcechange`) ; il n'y a donc **aucun faux papier possible**. Les autres champs se remplissent et se modifient (« Modifier »).
 - **Clic droit sur un joueur, papiers en main** : il voit la fiche en lecture seule et **apprend le nom RP du porteur** (rien dans l'autre sens : le porteur ne connaît pas son nom). Ils gardent tous les deux la possibilité de se présenter (menu du clic droit ou touche `U`) ; le menu ne disparaît que quand ils se connaissent mutuellement. Si le spectateur ne connaissait le porteur que sous pseudonyme, c'est compté comme une **révélation**. Le bouton **Montrer aux proches** fait la même chose pour tous les joueurs dans `introAllRadius`.
 - Seul le titulaire modifie ses papiers. Des papiers volés s'ouvrent en lecture seule et **n'apprennent rien** (le journal staff le signale ⚠️).
 - Le journal staff note chaque présentation de papiers et si le spectateur a appris le nom.
 
-## Surnoms (menu des notifications, touche `G` → Notifications → Surnoms)
+## Roue des menus (touche `V` maintenue)
+Maintenir la touche ouvre une **roue** avec tous les menus : Messagerie, Notifications, Carnet, Révéler nom, Surnoms, Mon nom RP, Se présenter (en partie), Commandes, Aide, Débrief, et **Panneau staff** pour ceux qui y ont accès. La souris démarre au centre (rien n'est en évidence) ; la déplacer met une tranche en évidence ; **relâcher la touche ou cliquer** ouvre le menu en évidence. La tranche du haut est **Annuler** ; relâcher sans avoir bougé la souris ne fait rien. Pastilles de compteur sur Messagerie, Notifications et Révéler nom.
+Pour un **duo de touches**, assigner aussi « Roue des menus : touche complémentaire » dans Options → Contrôles (les deux doivent être maintenues).
+
+## Surnoms (carnet de contacts, touche `O` → Surnoms)
 On peut donner un **surnom** à chaque personne qui s'est présentée à nous (32 caractères). C'est le surnom qui s'affiche en jeu (HUD, au-dessus de la tête, commandes visant un joueur par son nom) ; le **nom sous lequel la personne s'est présentée** (vrai nom ou pseudonyme) reste affiché dans l'écran des Surnoms et dans le carnet de contacts (`O`). Un surnom est privé et effacé à la fin de la partie ; deux contacts ne peuvent pas avoir le même surnom.
 
 ## Notifications

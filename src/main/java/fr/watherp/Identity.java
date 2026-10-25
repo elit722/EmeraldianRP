@@ -9,7 +9,7 @@ import net.minecraft.network.PacketByteBuf;
 import java.util.UUID;
 
 /**
- * Contenu d'un papier d'identité. Stocké dans le composant « custom_data » de l'objet (clé {@code watherp_id}) :
+ * Contenu d'un billet de train (ancien « papier d'identité »). Stocké dans le composant « custom_data » de l'objet (clé {@code watherp_id}) :
  * le titulaire (UUID + pseudo, sert à afficher son skin) et six champs libres.
  * Un papier « vierge » n'a pas de titulaire ({@link #NONE}).
  */
@@ -20,8 +20,21 @@ public record Identity(UUID owner, String ownerMc, String name, String age, Stri
     public static final int NAME_MAX = 40, AGE_MAX = 12, JOB_MAX = 40, FROM_MAX = 40, DEST_MAX = 40, MARK_MAX = 80;
     private static final String KEY = "watherp_id";
 
+    /** Provenance imprimée sur tous les billets (config, « PARIS » par défaut). */
+    public static String defaultFrom() {
+        String v = RpConfig.INSTANCE.ticketFrom;
+        return v == null || v.isBlank() ? "PARIS" : clip(v, FROM_MAX);
+    }
+
+    /** Destination imprimée sur tous les billets (config, « VIENNERAUDIA » par défaut). */
+    public static String defaultDestination() {
+        String v = RpConfig.INSTANCE.ticketDest;
+        return v == null || v.isBlank() ? "VIENNERAUDIA" : clip(v, DEST_MAX);
+    }
+
+    /** Billet vierge : sans titulaire, mais avec la provenance et la destination imposées. */
     public static Identity blank() {
-        return new Identity(NONE, "", "", "", "", "", "", "");
+        return new Identity(NONE, "", "", "", "", defaultFrom(), defaultDestination(), "");
     }
 
     /** Vrai tant que personne n'a rempli le papier. */
@@ -56,11 +69,32 @@ public record Identity(UUID owner, String ownerMc, String name, String age, Stri
         return s;
     }
 
+    private static String orDefault(String v, String def) {
+        return v == null || v.isEmpty() ? def : v;
+    }
+
+    /** Même billet avec un champ modifié (« age », « profession », « signe », « provenance », « destination ») ; valeur vide = remise à zéro. */
+    public Identity withField(String field, String value) {
+        return switch (field) {
+            case "age" -> of(owner, ownerMc, name, value, profession, provenance, destination, mark);
+            case "profession" -> of(owner, ownerMc, name, age, value, provenance, destination, mark);
+            case "signe" -> of(owner, ownerMc, name, age, profession, provenance, destination, value);
+            case "provenance" -> of(owner, ownerMc, name, age, profession, value, destination, mark);
+            case "destination" -> of(owner, ownerMc, name, age, profession, provenance, value, mark);
+            default -> this;
+        };
+    }
+
+    public Identity withOwner(UUID newOwner, String newOwnerMc, String newName) {
+        return of(newOwner, newOwnerMc, newName, age, profession, provenance, destination, mark);
+    }
+
     public static Identity of(UUID owner, String ownerMc, String name, String age, String profession,
                               String provenance, String destination, String mark) {
         return new Identity(owner == null ? NONE : owner, ownerMc == null ? "" : ownerMc,
             clip(name, NAME_MAX), clip(age, AGE_MAX), clip(profession, JOB_MAX),
-            clip(provenance, FROM_MAX), clip(destination, DEST_MAX), clip(mark, MARK_MAX));
+            orDefault(clip(provenance, FROM_MAX), defaultFrom()), orDefault(clip(destination, DEST_MAX), defaultDestination()),
+            clip(mark, MARK_MAX));
     }
 
     // ---------------------------------------------------------------- objet
@@ -73,7 +107,7 @@ public record Identity(UUID owner, String ownerMc, String name, String age, Stri
         NbtCompound t = root.getCompound(KEY);
         UUID owner = t.containsUuid("owner") ? t.getUuid("owner") : NONE;
         return of(owner, t.getString("mc"), t.getString("name"), t.getString("age"), t.getString("job"),
-            t.getString("from"), t.getString("to"), t.getString("mark"));
+            t.getString("from_o"), t.getString("to_o"), t.getString("mark"));
     }
 
     public void writeTo(ItemStack stack) {
@@ -83,8 +117,9 @@ public record Identity(UUID owner, String ownerMc, String name, String age, Stri
         t.putString("name", name);
         t.putString("age", age);
         t.putString("job", profession);
-        t.putString("from", provenance);
-        t.putString("to", destination);
+        // seules les exceptions décidées par un admin sont stockées ; sinon la valeur imposée (config) s'applique, même si elle change
+        t.putString("from_o", provenance.equals(defaultFrom()) ? "" : provenance);
+        t.putString("to_o", destination.equals(defaultDestination()) ? "" : destination);
         t.putString("mark", mark);
         NbtComponent.set(DataComponentTypes.CUSTOM_DATA, stack, root -> root.put(KEY, t));
     }
