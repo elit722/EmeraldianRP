@@ -58,8 +58,9 @@ public final class Net {
         }
     }
 
-    /** Ce que ce joueur sait des autres (UUID -> nom affiché) + son propre nom + option staff /r voirpseudo + ses pseudonymes révélables. */
-    public record Sync(Map<UUID, String> known, String own, boolean confirmed, boolean seePseudo, List<AliasEntry> aliased) implements CustomPayload {
+    /** Ce que ce joueur sait des autres (UUID -> nom affiché ; {@code introduced} : personnes qui le connaissent aussi ; {@code nicks} : ses surnoms) + son propre nom + option staff /r voirpseudo + ses pseudonymes révélables. */
+    public record Sync(Map<UUID, String> known, String own, boolean confirmed, boolean seePseudo, List<AliasEntry> aliased,
+                       List<UUID> introduced, Map<UUID, String> nicks) implements CustomPayload {
         public static final Id<Sync> ID = pid("sync");
         public static final PacketCodec<RegistryByteBuf, Sync> CODEC = PacketCodec.of(
             (v, b) -> {
@@ -73,6 +74,13 @@ public final class Net {
                 b.writeBoolean(v.seePseudo);
                 b.writeVarInt(v.aliased.size());
                 for (AliasEntry a : v.aliased) a.write(b);
+                b.writeVarInt(v.introduced.size());
+                for (UUID u : v.introduced) b.writeUuid(u);
+                b.writeVarInt(v.nicks.size());
+                for (Map.Entry<UUID, String> e : v.nicks.entrySet()) {
+                    b.writeUuid(e.getKey());
+                    b.writeString(e.getValue(), 64);
+                }
             },
             b -> {
                 int n = b.readVarInt();
@@ -84,7 +92,11 @@ public final class Net {
                 int k = b.readVarInt();
                 List<AliasEntry> al = new ArrayList<>();
                 for (int i = 0; i < k; i++) al.add(AliasEntry.read(b));
-                return new Sync(m, own, confirmed, seePseudo, al);
+                List<UUID> intro = new ArrayList<>();
+                for (int i = 0, c = b.readVarInt(); i < c; i++) intro.add(b.readUuid());
+                Map<UUID, String> nicks = new LinkedHashMap<>();
+                for (int i = 0, c = b.readVarInt(); i < c; i++) nicks.put(b.readUuid(), b.readString(64));
+                return new Sync(m, own, confirmed, seePseudo, al, intro, nicks);
             });
 
         @Override
@@ -445,7 +457,7 @@ public final class Net {
      * @param aka         autres noms qu'il m'a montrés avant (pseudonyme puis vrai nom, par exemple)
      * @param note        ma note privée
      */
-    public record ContactEntry(UUID id, String name, boolean alias, String mineToThem, boolean mineAlias, String aka, String note, boolean online) {
+    public record ContactEntry(UUID id, String name, boolean alias, String mineToThem, boolean mineAlias, String aka, String note, boolean online, String nick) {
         public void write(PacketByteBuf b) {
             b.writeUuid(id);
             b.writeString(name, 96);
@@ -455,11 +467,12 @@ public final class Net {
             b.writeString(aka, 300);
             b.writeString(note, 2000);
             b.writeBoolean(online);
+            b.writeString(nick, 64);
         }
 
         public static ContactEntry read(PacketByteBuf b) {
             return new ContactEntry(b.readUuid(), b.readString(96), b.readBoolean(), b.readString(96), b.readBoolean(),
-                b.readString(300), b.readString(2000), b.readBoolean());
+                b.readString(300), b.readString(2000), b.readBoolean(), b.readString(64));
         }
     }
 
@@ -880,6 +893,22 @@ public final class Net {
         }
     }
 
+    /** Surnom donné à un contact (texte vide = efface le surnom). C'est lui qui s'affiche en jeu. */
+    public record SetNick(UUID target, String nick) implements CustomPayload {
+        public static final Id<SetNick> ID = pid("set_nick");
+        public static final PacketCodec<RegistryByteBuf, SetNick> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeUuid(v.target);
+                b.writeString(v.nick, 64);
+            },
+            b -> new SetNick(b.readUuid(), b.readString(64)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     /** Redemande le débrief de la dernière partie. */
     public record RequestDebrief() implements CustomPayload {
         public static final Id<RequestDebrief> ID = pid("request_debrief");
@@ -967,6 +996,7 @@ public final class Net {
         PayloadTypeRegistry.playC2S().register(RequestPlayers.ID, RequestPlayers.CODEC);
         PayloadTypeRegistry.playC2S().register(IntroduceAll.ID, IntroduceAll.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestContacts.ID, RequestContacts.CODEC);
+        PayloadTypeRegistry.playC2S().register(SetNick.ID, SetNick.CODEC);
         PayloadTypeRegistry.playC2S().register(ContactNote.ID, ContactNote.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestDebrief.ID, RequestDebrief.CODEC);
         PayloadTypeRegistry.playC2S().register(SaveIdentity.ID, SaveIdentity.CODEC);

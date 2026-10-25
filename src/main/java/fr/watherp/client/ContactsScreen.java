@@ -88,6 +88,10 @@ public class ContactsScreen extends Screen {
             close();
             WatheRPClient.requestDebrief();
         }));
+        btns.add(new Btn(x0 + 14 + 120 + 8, y0 + H - 32, 120, 20, "Surnoms", Ui.AQUA, () -> {
+            flushNote();
+            if (client != null) client.setScreen(new NicknamesScreen());
+        }));
         btns.add(new Btn(x0 + W - 14 - 120, y0 + H - 32, 120, 20, "Fermer", Ui.ACCENT, this::close));
 
         ClientPlayNetworking.send(new Net.RequestContacts());
@@ -105,7 +109,7 @@ public class ContactsScreen extends Screen {
         String q = fold(search == null ? "" : search.getText());
         shown = new ArrayList<>();
         for (Net.ContactEntry e : ClientRp.contacts) {
-            if (q.isEmpty() || fold(e.name()).contains(q)) shown.add(e);
+            if (q.isEmpty() || fold(e.name()).contains(q) || fold(e.nick()).contains(q)) shown.add(e);
         }
         if (selected != null && shown.stream().noneMatch(e -> e.id().equals(selected))) selected = null;
         if (selected == null && !shown.isEmpty()) select(shown.get(0).id());
@@ -148,7 +152,7 @@ public class ContactsScreen extends Screen {
         for (int i = 0; i < ClientRp.contacts.size(); i++) {
             Net.ContactEntry e = ClientRp.contacts.get(i);
             if (e.id().equals(selected)) {
-                ClientRp.contacts.set(i, new Net.ContactEntry(e.id(), e.name(), e.alias(), e.mineToThem(), e.mineAlias(), e.aka(), text, e.online()));
+                ClientRp.contacts.set(i, new Net.ContactEntry(e.id(), e.name(), e.alias(), e.mineToThem(), e.mineAlias(), e.aka(), text, e.online(), e.nick()));
                 break;
             }
         }
@@ -227,8 +231,10 @@ public class ContactsScreen extends Screen {
             else if (hover) c.fill(listX + 1, ry, listX + listW - 1, ry + ROW_H, Ui.BTN_HOVER);
             c.fill(listX + 1, ry, listX + 3, ry + ROW_H, e.alias() ? Ui.YELLOW : Ui.GREEN);
             c.fill(listX + listW - 12, ry + 8, listX + listW - 6, ry + 14, e.online() ? Ui.GREEN : 0xFF55555C);
-            c.drawText(tr, tr.trimToWidth(e.name(), listW - 30), listX + 8, ry + 3, sel ? Ui.ACCENT : Ui.TEXT, false);
-            c.drawText(tr, e.alias() ? "pseudonyme" : "vrai nom", listX + 8, ry + 13, Ui.MUTED, false);
+            String label = e.nick().isEmpty() ? e.name() : e.nick();
+            c.drawText(tr, tr.trimToWidth(label, listW - 30), listX + 8, ry + 3, sel ? Ui.ACCENT : Ui.TEXT, false);
+            c.drawText(tr, tr.trimToWidth(e.nick().isEmpty() ? (e.alias() ? "pseudonyme" : "vrai nom")
+                : e.name() + (e.alias() ? " (pseudonyme)" : ""), listW - 30), listX + 8, ry + 13, Ui.MUTED, false);
         }
         c.disableScissor();
 
@@ -240,9 +246,13 @@ public class ContactsScreen extends Screen {
             c.getMatrices().push();
             c.getMatrices().translate(detX, listY, 0);
             c.getMatrices().scale(1.5f, 1.5f, 1f);
-            c.drawText(tr, tr.trimToWidth(e.name(), (int) (detW / 1.5f)), 0, 0, Ui.TEXT, false);
+            c.drawText(tr, tr.trimToWidth(e.nick().isEmpty() ? e.name() : e.nick(), (int) (detW / 1.5f)), 0, 0, Ui.TEXT, false);
             c.getMatrices().pop();
             int y = listY + 20;
+            if (!e.nick().isEmpty()) {
+                line(c, "Nom connu :", e.name() + (e.alias() ? " (pseudonyme)" : ""), y, Ui.AQUA);
+                y += 12;
+            }
             line(c, "Vous le connaissez comme :", e.alias() ? "pseudonyme (vrai nom inconnu)" : "sous son vrai nom", y, e.alias() ? Ui.YELLOW : Ui.GREEN);
             y += 12;
             line(c, "Il vous connaît comme :", e.mineToThem().isEmpty() ? "pas encore présenté en retour"

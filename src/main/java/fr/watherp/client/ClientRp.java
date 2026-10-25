@@ -17,6 +17,10 @@ public final class ClientRp {
     private ClientRp() {}
 
     public static Map<UUID, String> known = new HashMap<>();
+    /** Surnoms que j'ai donnés (contact -> surnom) : c'est eux qui s'affichent en jeu à la place du nom connu. */
+    public static Map<UUID, String> nicks = new HashMap<>();
+    /** Personnes qui me connaissent AUSSI (présentation dans les deux sens) : seules celles-là n'ouvrent plus le menu « Se présenter ». */
+    public static Set<UUID> mutual = new HashSet<>();
     public static String own = "";
     public static boolean confirmed = false;
     /** Staff ayant activé /r voirpseudo (envoyé par le serveur) : voit les vrais pseudos en partie. */
@@ -229,7 +233,7 @@ public final class ClientRp {
     public static Text displayName(PlayerEntity target) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || target == mc.player || !gameRunning()) return null;
-        String rp = known.get(target.getUuid());
+        String rp = nicks.getOrDefault(target.getUuid(), known.get(target.getUuid()));
         if (seePseudo) {
             String mcName = target.getGameProfile().getName();
             return Text.literal(rp != null ? rp + " (" + mcName + ")" : mcName);
@@ -328,6 +332,8 @@ public final class ClientRp {
 
     public static void reset() {
         known = new HashMap<>();
+        nicks = new HashMap<>();
+        mutual = new HashSet<>();
         own = "";
         confirmed = false;
         seePseudo = false;

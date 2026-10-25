@@ -30,21 +30,24 @@ public class NotifCenterScreen extends Screen {
         y0 = (height - H) / 2;
         ClientRp.unreadNotifs = 0;
         btns.clear();
-        int by = y0 + H - 32, bw = (W - 28 - 12) / 4;
+        int by = y0 + H - 32, bw = (W - 28 - 16) / 5;
         btns.add(new Btn(x0 + 14, by, bw, 20, "Messagerie", Ui.AQUA, () -> {
             if (client != null) client.setScreen(new ChatsScreen(-1));
         }));
         // menu pour révéler son vrai nom aux personnes à qui l'on s'est présenté sous pseudonyme
-        revealBtn = new Btn(x0 + 14 + bw + 4, by, bw, 20, "Révéler mon nom", Ui.GREEN, () -> {
+        revealBtn = new Btn(x0 + 14 + bw + 4, by, bw, 20, "Révéler nom", Ui.GREEN, () -> {
             if (client != null) client.setScreen(new RevealScreen());
         });
         btns.add(revealBtn);
-        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Tout effacer", Ui.RED, () -> {
+        btns.add(new Btn(x0 + 14 + 2 * (bw + 4), by, bw, 20, "Surnoms", Ui.AQUA, () -> {
+            if (client != null) client.setScreen(new NicknamesScreen());
+        }));
+        btns.add(new Btn(x0 + 14 + 3 * (bw + 4), by, bw, 20, "Tout effacer", Ui.RED, () -> {
             ClientRp.notifs.clear();
             ClientRp.unread.clear();
             scroll = 0;
         }));
-        btns.add(new Btn(x0 + 14 + 3 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
+        btns.add(new Btn(x0 + 14 + 4 * (bw + 4), by, bw, 20, "Retour", Ui.ACCENT, () -> {
             if (client != null) client.setScreen(new CommandScreen());
         }));
     }

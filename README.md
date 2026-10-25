@@ -98,10 +98,13 @@ Chaque présentation menée au bout, chaque révélation de vrai nom et chaque p
 
 ## Papiers d'identité (objet `watherp:identity_paper`)
 - Obtenus au début de la partie (`giveIdentityPaper`), via `/r papiers <joueur>`, `/give @s watherp:identity_paper` ou l'onglet créatif Outils / Équipement de Wathe.
-- **Clic droit dans le vide** : fiche d'identité avec le **skin du titulaire à gauche** (style des fiches suspect) et les champs **Nom, Âge, Profession, Provenance, Destination, Signe particulier**. Un papier vierge s'ouvre directement en modification (nom RP pré-rempli) ; le titulaire peut ensuite cliquer **Modifier**.
-- **Clic droit sur un joueur** (papiers en main) : il voit la fiche en lecture seule, avec « Papiers montrés par … » s'il vous connaît. Bouton **Montrer aux proches** : tous les joueurs dans `introAllRadius`.
-- Seul le titulaire modifie ses papiers ; un papier volé s'ouvre en lecture seule. Le nom inscrit n'est pas vérifié (on peut mentir sur ses papiers), mais le **journal staff signale ⚠️** quand le nom montré diffère du vrai nom RP du porteur (faux papiers, papiers volés).
-- Les papiers ne sont **pas** une présentation : montrer ses papiers ne fait pas « connaître » la personne dans le carnet.
+- **Clic droit dans le vide** : fiche d'identité avec le **skin du titulaire à gauche** (style des fiches suspect) et les champs **Nom, Âge, Profession, Provenance, Destination, Signe particulier**. Le **nom n'est pas modifiable** : c'est toujours le nom RP actuel du titulaire (il suit même un `/r forcechange`) ; il n'y a donc **aucun faux papier possible**. Les autres champs se remplissent et se modifient (« Modifier »).
+- **Clic droit sur un joueur, papiers en main** : il voit la fiche en lecture seule et **apprend le nom RP du porteur** (rien dans l'autre sens : le porteur ne connaît pas son nom). Ils gardent tous les deux la possibilité de se présenter (menu du clic droit ou touche `U`) ; le menu ne disparaît que quand ils se connaissent mutuellement. Si le spectateur ne connaissait le porteur que sous pseudonyme, c'est compté comme une **révélation**. Le bouton **Montrer aux proches** fait la même chose pour tous les joueurs dans `introAllRadius`.
+- Seul le titulaire modifie ses papiers. Des papiers volés s'ouvrent en lecture seule et **n'apprennent rien** (le journal staff le signale ⚠️).
+- Le journal staff note chaque présentation de papiers et si le spectateur a appris le nom.
+
+## Surnoms (menu des notifications, touche `G` → Notifications → Surnoms)
+On peut donner un **surnom** à chaque personne qui s'est présentée à nous (32 caractères). C'est le surnom qui s'affiche en jeu (HUD, au-dessus de la tête, commandes visant un joueur par son nom) ; le **nom sous lequel la personne s'est présentée** (vrai nom ou pseudonyme) reste affiché dans l'écran des Surnoms et dans le carnet de contacts (`O`). Un surnom est privé et effacé à la fin de la partie ; deux contacts ne peuvent pas avoir le même surnom.
 
 ## Notifications
 - Quand le menu de chat n'est pas ouvert, chaque nouveau message affiche une popup avec la touche Messagerie **lue dans tes réglages** (la touche ouvre directement ce chat). Au plus 3 popups à la fois (les plus anciennes partent), disparition au bout de 6 s (invitations : 20 s ; alertes staff : 8 s).

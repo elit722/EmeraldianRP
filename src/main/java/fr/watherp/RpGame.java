@@ -91,10 +91,11 @@ public final class RpGame {
                 } catch (IllegalArgumentException ignored) {
                 }
             }
-        } else if (!RpData.INSTANCE.gameNames.isEmpty() || !RpData.INSTANCE.gameEvents.isEmpty() || !RpData.INSTANCE.contactNotes.isEmpty()) {
+        } else if (!RpData.INSTANCE.gameNames.isEmpty() || !RpData.INSTANCE.gameEvents.isEmpty() || !RpData.INSTANCE.contactNotes.isEmpty() || !RpData.INSTANCE.contactNicks.isEmpty()) {
             RpData.INSTANCE.gameNames.clear();
             RpData.INSTANCE.gameEvents.clear();
             RpData.INSTANCE.contactNotes.clear();
+        RpData.INSTANCE.contactNicks.clear();
             RpData.save();
         }
     }
@@ -118,6 +119,7 @@ public final class RpGame {
         IntroLog.flush();
         RpData.INSTANCE.gameEvents.clear();
         RpData.INSTANCE.contactNotes.clear();
+        RpData.INSTANCE.contactNicks.clear();
         RpData.INSTANCE.gameStartMs = System.currentTimeMillis();
         RpData.save();
         IdentityItems.giveToParticipants(server);
@@ -143,6 +145,7 @@ public final class RpGame {
         promptTimer = -1;
         RpData.INSTANCE.gameEvents.clear();
         RpData.INSTANCE.contactNotes.clear();
+        RpData.INSTANCE.contactNicks.clear();
         RpData.INSTANCE.gameStartMs = 0;
         RpData.save();
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
@@ -355,12 +358,18 @@ public final class RpGame {
         Map<UUID, String> out = new LinkedHashMap<>();
         for (Map.Entry<UUID, Known> e : knowledgeOf(p.getUuid()).entrySet()) out.put(e.getKey(), e.getValue().name());
         String own = names.getOrDefault(p.getUuid(), "");
-        ServerPlayNetworking.send(p, new Net.Sync(out, own, names.containsKey(p.getUuid()), Staff.isSeeingPseudo(p), aliasedTo(p.getUuid())));
+        List<UUID> mutual = new ArrayList<>();
+        for (UUID other : knowledgeOf(p.getUuid()).keySet()) if (knowledgeOf(other).containsKey(p.getUuid())) mutual.add(other);
+        ServerPlayNetworking.send(p, new Net.Sync(out, own, names.containsKey(p.getUuid()), Staff.isSeeingPseudo(p), aliasedTo(p.getUuid()),
+            mutual, ContactBook.nicksOf(p.getUuid())));
     }
 
-    /** Vrai si A et B se sont déjà présentés l'un à l'autre (présentation menée au bout : acceptée par les deux côtés). */
+    /**
+     * Vrai si A et B se connaissent l'un l'autre. Une seule direction (ex. : B a vu les papiers d'identité de A) ne suffit pas :
+     * les deux gardent alors la possibilité de se présenter.
+     */
     public static boolean isIntroduced(UUID a, UUID b) {
-        return knowledgeOf(a).containsKey(b) || knowledgeOf(b).containsKey(a);
+        return knowledgeOf(a).containsKey(b) && knowledgeOf(b).containsKey(a);
     }
 
     /** Proposition encore en attente entre ces deux joueurs (dans un sens ou dans l'autre), sinon null. */
@@ -447,7 +456,37 @@ public final class RpGame {
     }
 
     private static void learn(UUID observer, UUID target, Known k) {
-        knowledge.computeIfAbsent(observer, x -> new HashMap<>()).put(target, k);
+        Map<UUID, Known> m = knowledge.computeIfAbsent(observer, x -> new HashMap<>());
+        Known cur = m.get(target);
+        if (cur != null && !cur.alias() && k.alias()) return; // il connaît déjà son vrai nom (papiers) : un pseudonyme ne le remplace pas
+        m.put(target, k);
+    }
+
+    /**
+     * {@code viewer} vient de voir les papiers d'identité de {@code owner} : il connaît son nom RP (le vrai : les papiers ne se
+     * falsifient pas). {@code owner} ne connaît PAS {@code viewer} pour autant : ils peuvent encore se présenter l'un à l'autre.
+     * Si {@code viewer} ne le connaissait que sous pseudonyme, c'est une révélation.
+     * @return vrai si {@code viewer} a appris quelque chose
+     */
+    public static boolean learnFromPapers(MinecraftServer server, ServerPlayerEntity owner, ServerPlayerEntity viewer) {
+        String real = names.get(owner.getUuid());
+        if (real == null || !isRunning(server)) return false;
+        Known cur = knowledgeOf(viewer.getUuid()).get(owner.getUuid());
+        if (cur != null && !cur.alias()) return false;
+        knowledge.computeIfAbsent(viewer.getUuid(), x -> new HashMap<>()).put(owner.getUuid(), new Known(real, false));
+        if (cur != null) {
+            recordEvent("reveal", owner.getUuid(), viewer.getUuid(), cur.name(), false, real);
+            IntroLog.reveal(owner.getUuid(), viewer.getUuid(), cur.name(), real);
+            ServerPlayNetworking.send(viewer, new Net.Revealed(cur.name(), real));
+            viewer.sendMessage(Msg.ok(cur.name() + " vous montre ses papiers : " + real + "."), true);
+        } else {
+            recordEvent("papers", owner.getUuid(), viewer.getUuid(), real, false, real);
+            viewer.sendMessage(Msg.ok("Vous connaissez maintenant " + real + " (papiers d'identité)."), true);
+        }
+        RpData.save();
+        syncKnowledge(viewer);
+        syncKnowledge(owner); // sa liste de personnes révélables / son carnet peuvent avoir changé
+        return true;
     }
 
     /** Résultat de l'envoi d'une proposition à une personne. */
@@ -669,7 +708,8 @@ public final class RpGame {
             String own = currentOrPrevious(self.getUuid());
             if (own != null && fold(own).equals(f)) return self;
             for (Map.Entry<UUID, Known> e : knowledgeOf(self.getUuid()).entrySet()) {
-                if (fold(e.getValue().name()).equals(f)) {
+                String nick = ContactBook.nick(self.getUuid(), e.getKey());
+                if (fold(e.getValue().name()).equals(f) || (nick != null && fold(nick).equals(f))) {
                     ServerPlayerEntity p = server.getPlayerManager().getPlayer(e.getKey());
                     if (p != null) return p;
                 }

@@ -100,6 +100,8 @@ public class WatheRPClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(Net.Sync.ID, (payload, ctx) -> {
             ClientRp.known = new java.util.HashMap<>(payload.known());
+            ClientRp.nicks = new java.util.HashMap<>(payload.nicks());
+            ClientRp.mutual = new java.util.HashSet<>(payload.introduced());
             ClientRp.own = payload.own();
             ClientRp.confirmed = payload.confirmed();
             ClientRp.seePseudo = payload.seePseudo();
@@ -111,6 +113,7 @@ public class WatheRPClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(Net.Contacts.ID, (payload, ctx) -> {
             ClientRp.contacts = new java.util.ArrayList<>(payload.list());
             if (ctx.client().currentScreen instanceof ContactsScreen s) s.refreshList();
+            if (ctx.client().currentScreen instanceof NicknamesScreen s) s.refreshList();
         });
 
         // ---- débrief de fin de partie
@@ -304,8 +307,9 @@ public class WatheRPClient implements ClientModInitializer {
         if (me.isSpectator() || me.isCreative() || target.isSpectator()) return false;
         if (!ClientRp.gameRunning()) return false;
         if (me.squaredDistanceTo(target) > 6 * 6) return false;
-        // une seule présentation par personne : déjà présentés = le clic droit reste un clic droit normal (le serveur revérifie)
-        if (ClientRp.known.containsKey(target.getUuid())) return false;
+        // une seule présentation par personne : déjà présentés (dans les deux sens) = le clic droit reste un clic droit normal (le serveur revérifie).
+        // Si seul l'un des deux connaît l'autre (papiers d'identité vus), le menu reste ouvert aux deux.
+        if (ClientRp.mutual.contains(target.getUuid())) return false;
         ItemStack held = me.getMainHandStack();
         // papiers d'identité en main : le clic droit sur un joueur les lui montre (action de l'objet), pas de présentation
         if (held.getItem() instanceof fr.watherp.IdentityPaperItem) return false;

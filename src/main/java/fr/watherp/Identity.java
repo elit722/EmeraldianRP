@@ -34,6 +34,11 @@ public record Identity(UUID owner, String ownerMc, String name, String age, Stri
         return String.format("%04d", Math.floorMod(owner.hashCode(), 10000));
     }
 
+    /** Même papier avec un autre nom : le nom affiché est toujours le nom RP actuel du titulaire (il ne se saisit pas). */
+    public Identity withName(String newName) {
+        return new Identity(owner, ownerMc, clip(newName, NAME_MAX), age, profession, provenance, destination, mark);
+    }
+
     // ---------------------------------------------------------------- nettoyage des saisies
 
     /** Texte d'une ligne : espaces normalisés, caractères de contrôle retirés, longueur bornée (en caractères Unicode). */

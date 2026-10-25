@@ -31,6 +31,55 @@ public final class ContactBook {
         return s;
     }
 
+    public static final int NICK_MAX = 32;
+
+    /** Surnom que {@code observer} a donné à {@code target}, ou null. */
+    public static String nick(UUID observer, UUID target) {
+        Map<String, String> m = RpData.INSTANCE.contactNicks.get(observer.toString());
+        return m == null ? null : m.get(target.toString());
+    }
+
+    /** Tous les surnoms de {@code observer} (contact -> surnom), pour l'affichage en jeu côté client. */
+    public static Map<UUID, String> nicksOf(UUID observer) {
+        Map<UUID, String> out = new LinkedHashMap<>();
+        Map<String, String> m = RpData.INSTANCE.contactNicks.get(observer.toString());
+        if (m == null) return out;
+        for (Map.Entry<String, String> e : m.entrySet()) {
+            try {
+                out.put(UUID.fromString(e.getKey()), e.getValue());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Donne (ou, texte vide, retire) un surnom à une personne que {@code p} connaît.
+     * @return message d'erreur, ou null si c'est enregistré
+     */
+    public static String setNick(ServerPlayerEntity p, UUID target, String raw) {
+        MinecraftServer server = p.getServer();
+        if (server == null) return "Serveur indisponible.";
+        if (!RpGame.knowledgeOf(p.getUuid()).containsKey(target)) return "Vous ne connaissez pas cette personne.";
+        String n = RpGame.clean(raw);
+        Map<String, String> m = RpData.INSTANCE.contactNicks.computeIfAbsent(p.getUuidAsString(), k -> new LinkedHashMap<>());
+        if (n.isEmpty()) {
+            m.remove(target.toString());
+        } else {
+            if (n.length() > NICK_MAX) return "Surnom trop long (max. " + NICK_MAX + " caractères).";
+            String err = RpGame.validate(server, p.getUuid(), n, false);
+            if (err != null) return err;
+            // pas deux fois le même surnom chez un même joueur : on ne saurait plus qui est qui
+            for (Map.Entry<String, String> e : m.entrySet()) {
+                if (!e.getKey().equals(target.toString()) && RpGame.fold(e.getValue()).equals(RpGame.fold(n))) return "Vous avez déjà un contact avec ce surnom.";
+            }
+            m.put(target.toString(), n);
+        }
+        if (m.isEmpty()) RpData.INSTANCE.contactNicks.remove(p.getUuidAsString());
+        RpData.save();
+        return null;
+    }
+
     private static String note(UUID observer, UUID target) {
         Map<String, String> m = RpData.INSTANCE.contactNotes.get(observer.toString());
         if (m == null) return "";
@@ -67,9 +116,10 @@ public final class ContactBook {
             RpGame.Known back = RpGame.knowledgeOf(id).get(me);
             out.add(new Net.ContactEntry(id, k.name(), k.alias(),
                 back == null ? "" : back.name(), back != null && back.alias(),
-                otherNames(me, id, k.name()), note(me, id), server.getPlayerManager().getPlayer(id) != null));
+                otherNames(me, id, k.name()), note(me, id), server.getPlayerManager().getPlayer(id) != null,
+                Objects.requireNonNullElse(nick(me, id), "")));
         }
-        out.sort(Comparator.comparing((Net.ContactEntry c) -> RpGame.fold(c.name())));
+        out.sort(Comparator.comparing((Net.ContactEntry c) -> RpGame.fold(c.nick().isEmpty() ? c.name() : c.nick())));
         return out;
     }
 

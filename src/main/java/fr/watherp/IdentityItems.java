@@ -81,10 +81,17 @@ public final class IdentityItems {
         return null;
     }
 
+    /** Nom RP actuel du titulaire : c'est le seul nom qui puisse figurer sur des papiers (pas de faux papiers). */
+    private static String ownerName(Identity id) {
+        String n = RpGame.currentOrPrevious(id.owner());
+        return n == null || n.isBlank() ? id.name() : n;
+    }
+
     /** Clic droit dans le vide : ouvre la carte (modifiable si vierge ou si le joueur en est le titulaire). */
     public static void open(ServerPlayerEntity p, ItemStack stack) {
         Identity id = Identity.read(stack);
         boolean editable = id.isBlank() || id.owner().equals(p.getUuid());
+        if (!id.isBlank()) id = id.withName(ownerName(id));
         ServerPlayNetworking.send(p, new Net.OpenIdentity(editable, "", id));
     }
 
@@ -100,12 +107,14 @@ public final class IdentityItems {
             p.sendMessage(Msg.err("Ces papiers ne sont pas les vôtres."), true);
             return;
         }
-        Identity n = Identity.of(p.getUuid(), p.getGameProfile().getName(), in.name(), in.age(), in.profession(),
-            in.provenance(), in.destination(), in.mark());
-        if (n.name().isEmpty()) {
-            p.sendMessage(Msg.err("Le nom est obligatoire."), true);
+        // le nom est imposé : c'est votre nom RP (le champ « nom » envoyé par le client est ignoré)
+        String rp = RpGame.currentOrPrevious(p.getUuid());
+        if (rp == null || rp.isBlank()) {
+            p.sendMessage(Msg.err("Définissez d'abord votre nom RP."), true);
             return;
         }
+        Identity n = Identity.of(p.getUuid(), p.getGameProfile().getName(), rp, in.age(), in.profession(),
+            in.provenance(), in.destination(), in.mark());
         n.writeTo(stack);
         p.sendMessage(Msg.ok("Papiers d'identité enregistrés au nom de « " + n.name() + " »."), true);
     }
@@ -120,13 +129,15 @@ public final class IdentityItems {
         return false;
     }
 
+    /** Montre la fiche à {@code to}. Si ce sont les papiers de celui qui les montre, {@code to} apprend son nom RP (lui ne connaît pas {@code to} pour autant). */
     private static void deliver(ServerPlayerEntity from, ServerPlayerEntity to, Identity id) {
+        MinecraftServer server = from.getServer();
+        String shownName = ownerName(id);
+        boolean own = id.owner().equals(from.getUuid());
+        boolean learned = own && server != null && RpGame.learnFromPapers(server, from, to);
         RpGame.Known k = RpGame.knowledgeOf(to.getUuid()).get(from.getUuid());
-        ServerPlayNetworking.send(to, new Net.OpenIdentity(false, k == null ? "" : k.name(), id));
-        String real = RpGame.currentOrPrevious(id.owner());
-        boolean forged = !id.owner().equals(from.getUuid())
-            || (real != null && !RpGame.fold(real).equals(RpGame.fold(id.name())));
-        IntroLog.papers(from.getUuid(), to.getUuid(), id.name(), forged);
+        ServerPlayNetworking.send(to, new Net.OpenIdentity(false, k == null ? "" : k.name(), id.withName(shownName)));
+        IntroLog.papers(from.getUuid(), to.getUuid(), id.owner(), shownName, learned);
     }
 
     private static Identity filled(ServerPlayerEntity p, ItemStack stack) {

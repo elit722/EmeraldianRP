@@ -86,9 +86,15 @@ public final class IntroLog {
             + ", qui le connaissait sous « " + Discord.esc(aliasKnown) + " ».");
     }
 
-    /** {@code actor} montre ses papiers d'identité à {@code other}. */
-    public static void papers(UUID actor, UUID other, String nameOnPaper, boolean forged) {
-        add("🪪 " + who(actor) + " a montré ses **papiers d'identité** à " + who(other) + " : nom inscrit « " + Discord.esc(nameOnPaper) + " »"
-            + (forged ? " ⚠️ *(différent de son vrai nom RP)*" : "") + ".");
+    /**
+     * {@code actor} montre des papiers d'identité à {@code other}. Le nom des papiers est toujours le nom RP de leur titulaire
+     * ({@code owner}) ; {@code learned} : {@code other} vient d'apprendre ce nom (papiers du porteur, le titulaire ne le connaît pas pour autant).
+     */
+    public static void papers(UUID actor, UUID other, UUID owner, String nameOnPaper, boolean learned) {
+        boolean own = owner.equals(actor);
+        add("🪪 " + who(actor) + " a montré " + (own ? "ses" : "les") + " **papiers d'identité** " + (own ? "" : "de " + who(owner) + " ")
+            + "à " + who(other) + " : « " + Discord.esc(nameOnPaper) + " »"
+            + (own ? (learned ? " — " + who(other) + " connaît maintenant son vrai nom" : " — déjà connu")
+                : " ⚠️ *(papiers d'un autre joueur : rien n'est appris)*") + ".");
     }
 }

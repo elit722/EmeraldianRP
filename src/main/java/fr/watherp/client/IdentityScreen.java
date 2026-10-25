@@ -72,7 +72,7 @@ public class IdentityScreen extends Screen {
         rowsY = y0 + 84;
         for (int i = 0; i < 6; i++) fields[i] = null;
         if (editing) {
-            for (int i = 0; i < 6; i++) {
+            for (int i = 1; i < 6; i++) { // le nom (0) n'est pas modifiable : c'est votre nom RP
                 final int idx = i;
                 TextFieldWidget f = new TextFieldWidget(textRenderer, valX, rowY(i) - 1, valW, 12, Text.literal(LABELS[i]));
                 f.setDrawsBackground(false);
@@ -80,11 +80,10 @@ public class IdentityScreen extends Screen {
                 f.setMaxLength(MAXLEN[i]);
                 f.setText(vals[i]);
                 f.setChangedListener(t -> vals[idx] = t);
-                if (i == 0) f.setPlaceholder(Text.literal("Nom"));
                 fields[i] = f;
                 addDrawableChild(f);
             }
-            setInitialFocus(fields[0]);
+            setInitialFocus(fields[1]);
         }
         buildButtons();
     }
@@ -135,9 +134,14 @@ public class IdentityScreen extends Screen {
     }
 
     private void save() {
-        if (vals[0] == null || vals[0].trim().isEmpty()) return;
+        if (!canSave()) return;
         ClientPlayNetworking.send(new Net.SaveIdentity(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]));
         close();
+    }
+
+    /** Le nom des papiers est votre nom RP : sans nom RP, impossible de les remplir. */
+    private boolean canSave() {
+        return vals[0] != null && !vals[0].trim().isEmpty();
     }
 
     // ---------------------------------------------------------------- rendu
@@ -246,7 +250,7 @@ public class IdentityScreen extends Screen {
             int ry = rowY(i);
             small(c, LABELS[i].toUpperCase(), colX, ry + 2, LABEL, 0.8f);
             for (int dx = 0; dx < valW; dx += 3) c.fill(valX + dx, ry + 11, valX + dx + 1, ry + 12, DOT);
-            if (!editing) {
+            if (!editing || i == 0) {
                 String v = vals[i] == null ? "" : vals[i];
                 if (i == 5) {
                     // le signe particulier peut tenir sur deux lignes
@@ -260,14 +264,16 @@ public class IdentityScreen extends Screen {
                 }
             }
         }
-        if (editing && (vals[0] == null || vals[0].trim().isEmpty())) {
-            small(c, "Le nom est obligatoire.", colX, rowY(5) + 26, RED, 0.75f);
+        if (editing && !canSave()) {
+            small(c, "Définissez d'abord votre nom RP (/rpnom).", colX, rowY(5) + 26, RED, 0.75f);
+        } else if (editing) {
+            small(c, "Le nom est votre nom RP : il ne se modifie pas.", colX, rowY(5) + 26, LABEL, 0.75f);
         }
         if (!editing && !canEdit && !data.isBlank()) {
             small(c, "Document présenté — lecture seule", colX, rowY(5) + 26, LABEL, 0.75f);
         }
         for (Btn b : btns) {
-            boolean en = b.enabled && !(editing && b.label.equals("Enregistrer") && (vals[0] == null || vals[0].trim().isEmpty()));
+            boolean en = b.enabled && !(editing && b.label.equals("Enregistrer") && !canSave());
             Ui.button(c, tr, b.x, b.y, b.w, b.h, b.label, mx, my, en, b.accent);
         }
     }

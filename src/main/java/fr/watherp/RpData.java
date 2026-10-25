@@ -54,6 +54,8 @@ public final class RpData {
     public long gameStartMs = 0;
     /** Notes privées du carnet de contacts : observateur (uuid) -> (contact (uuid) -> note). Effacées à la fin de la partie. */
     public Map<String, Map<String, String>> contactNotes = new LinkedHashMap<>();
+    /** Surnoms : observateur (uuid) -> (contact (uuid) -> surnom affiché en jeu). Effacés à la fin de la partie. */
+    public Map<String, Map<String, String>> contactNicks = new LinkedHashMap<>();
 
     private static Path path() {
         return FabricLoader.getInstance().getConfigDir().resolve("watherp-data.json");
@@ -82,6 +84,7 @@ public final class RpData {
         if (INSTANCE.pendingHistory == null) INSTANCE.pendingHistory = new ArrayList<>();
         if (INSTANCE.gameEvents == null) INSTANCE.gameEvents = new ArrayList<>();
         if (INSTANCE.contactNotes == null) INSTANCE.contactNotes = new LinkedHashMap<>();
+        if (INSTANCE.contactNicks == null) INSTANCE.contactNicks = new LinkedHashMap<>();
     }
 
     public static synchronized void save() {

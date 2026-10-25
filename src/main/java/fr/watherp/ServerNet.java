@@ -46,6 +46,14 @@ public final class ServerNet {
         ServerPlayNetworking.registerGlobalReceiver(Net.RequestContacts.ID, (payload, ctx) ->
             ContactBook.send(ctx.player()));
 
+        ServerPlayNetworking.registerGlobalReceiver(Net.SetNick.ID, (payload, ctx) -> {
+            ServerPlayerEntity p = ctx.player();
+            String err = ContactBook.setNick(p, payload.target(), payload.nick());
+            if (err != null) p.sendMessage(Msg.err(err), true);
+            else RpGame.syncKnowledge(p); // le surnom s'affiche tout de suite en jeu
+            ContactBook.send(p);
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(Net.ContactNote.ID, (payload, ctx) ->
             ContactBook.saveNote(ctx.player(), payload.target(), payload.text()));
 
