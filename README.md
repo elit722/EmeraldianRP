@@ -83,6 +83,7 @@ Données (rangs helper, tickets, dossiers warn/note, noms RP de la partie en cou
 
 ## Chat intégré (Messagerie)
 - **Helper** : menu « Chat intégré » (onglet du panneau ou touche `Y`) : chat direct avec n'importe quel joueur en ligne (popup chez lui avec la touche pour ouvrir), **chat helper** commun, création / fermeture de **groupes**, **Ajouter…** des membres à un chat (ils reçoivent la même popup).
+- **Archiver / Supprimer** (tous) : sous la liste des chats. **Archiver** met le chat en consultation seule pour vous (relecture possible, plus d'écriture, plus de popup ni de non-lu ; il passe en bas de liste avec « [archivé] » ; **Désarchiver** le rend). **Supprimer** (2 clics pour confirmer) vous fait quitter la conversation : elle disparaît définitivement de votre liste (un message système prévient les autres, et le chat est effacé du serveur s'il ne reste plus personne). Le chat helper ne s'archive ni ne se supprime pas.
 - **Joueur** : retrouve ses chats avec la touche `Y` tant que le staff ne les a pas fermés ; un chat fermé disparaît de sa liste et reste lisible (lecture seule) pour les helpers membres.
 - Tout est vérifié côté serveur (membres, fermeture, anonymat). Historique persistant (300 lignes / chat).
 

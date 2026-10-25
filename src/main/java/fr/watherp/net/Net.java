@@ -279,7 +279,7 @@ public final class Net {
     // ---- chat intégré (données)
 
     /** Un chat visible par le joueur. {@code members} = libellés (« Joueur anonyme » si masqué). */
-    public record ChatSummary(int id, String kind, String title, boolean closed, int ticketId, List<String> members, int count) {
+    public record ChatSummary(int id, String kind, String title, boolean closed, int ticketId, List<String> members, int count, boolean archived) {
         public void write(PacketByteBuf b) {
             b.writeVarInt(id);
             b.writeString(kind, 16);
@@ -289,6 +289,7 @@ public final class Net {
             b.writeVarInt(members.size());
             for (String m : members) b.writeString(m, 48);
             b.writeVarInt(count);
+            b.writeBoolean(archived);
         }
 
         public static ChatSummary read(PacketByteBuf b) {
@@ -300,7 +301,8 @@ public final class Net {
             int n = b.readVarInt();
             List<String> members = new ArrayList<>();
             for (int i = 0; i < n; i++) members.add(b.readString(48));
-            return new ChatSummary(id, kind, title, closed, ticket, members, b.readVarInt());
+            int count = b.readVarInt();
+            return new ChatSummary(id, kind, title, closed, ticket, members, count, b.readBoolean());
         }
     }
 
@@ -820,6 +822,25 @@ public final class Net {
         }
     }
 
+    /**
+     * Gérer SON exemplaire d'un chat : « archive » (consultation seule, plus de popups), « unarchive », « delete » (quitte et retire
+     * définitivement le chat de sa liste). Les autres membres ne sont pas touchés.
+     */
+    public record ChatManage(int chat, String action) implements CustomPayload {
+        public static final Id<ChatManage> ID = pid("chat_manage");
+        public static final PacketCodec<RegistryByteBuf, ChatManage> CODEC = PacketCodec.of(
+            (v, b) -> {
+                b.writeVarInt(v.chat);
+                b.writeString(v.action, 16);
+            },
+            b -> new ChatManage(b.readVarInt(), b.readString(16)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     /** Action sur une proposition de présentation : decline | pause (saisie du pseudonyme) | resume. */
     public record ProposalAction(int id, String action) implements CustomPayload {
         public static final Id<ProposalAction> ID = pid("proposal_action");
@@ -993,6 +1014,7 @@ public final class Net {
         PayloadTypeRegistry.playC2S().register(ChatCreate.ID, ChatCreate.CODEC);
         PayloadTypeRegistry.playC2S().register(ChatAdd.ID, ChatAdd.CODEC);
         PayloadTypeRegistry.playC2S().register(ChatClose.ID, ChatClose.CODEC);
+        PayloadTypeRegistry.playC2S().register(ChatManage.ID, ChatManage.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestPlayers.ID, RequestPlayers.CODEC);
         PayloadTypeRegistry.playC2S().register(IntroduceAll.ID, IntroduceAll.CODEC);
         PayloadTypeRegistry.playC2S().register(RequestContacts.ID, RequestContacts.CODEC);

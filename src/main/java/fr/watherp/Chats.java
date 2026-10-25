@@ -55,6 +55,8 @@ public final class Chats {
         public Set<String> anon = new LinkedHashSet<>();
         /** Membres hors ligne à prévenir (popup) à leur prochaine connexion. */
         public Set<String> pendingInvite = new LinkedHashSet<>();
+        /** Membres qui ont ARCHIVÉ ce chat : consultation seule pour eux, sans popup (les autres membres ne sont pas touchés). */
+        public Set<String> archived = new LinkedHashSet<>();
         public List<Line> lines = new ArrayList<>();
         public long lastMs;
     }
@@ -93,6 +95,7 @@ public final class Chats {
             if (c.members == null) c.members = new LinkedHashSet<>();
             if (c.anon == null) c.anon = new LinkedHashSet<>();
             if (c.pendingInvite == null) c.pendingInvite = new LinkedHashSet<>();
+            if (c.archived == null) c.archived = new LinkedHashSet<>();
             if (c.lines == null) c.lines = new ArrayList<>();
             if (c.kind == null) c.kind = DIRECT;
         }
@@ -183,7 +186,7 @@ public final class Chats {
                 members.add(m.equals(viewer.getUuidAsString()) ? usernameOf(m) + " (vous)" : label(c, m));
             }
         }
-        return new Net.ChatSummary(c.id, c.kind, titleFor(c, viewer), c.closed, c.ticketId, members, c.lines.size());
+        return new Net.ChatSummary(c.id, c.kind, titleFor(c, viewer), c.closed, c.ticketId, members, c.lines.size(), c.archived.contains(viewer.getUuidAsString()));
     }
 
     private static Net.ChatLineData lineData(Chat c, Line l, ServerPlayerEntity viewer) {
@@ -205,10 +208,12 @@ public final class Chats {
             if (c.closed && staff && ++closedStaff > 15) continue; // limite de l'archive en lecture seule
             visible.add(c);
         }
+        String me = p.getUuidAsString();
         visible.sort((a, b) -> {
             if (a.id == HELPER_ID) return -1;
             if (b.id == HELPER_ID) return 1;
-            if (a.closed != b.closed) return a.closed ? 1 : -1;
+            boolean ia = a.closed || a.archived.contains(me), ib = b.closed || b.archived.contains(me);
+            if (ia != ib) return ia ? 1 : -1;
             return Long.compare(Math.max(b.lastMs, b.createdMs), Math.max(a.lastMs, a.createdMs));
         });
         List<Net.ChatSummary> out = new ArrayList<>();
@@ -292,6 +297,7 @@ public final class Chats {
         Chat c = get(id);
         if (c == null || !canSee(c, p)) return "Ce chat n'existe plus.";
         if (c.closed) return "Ce chat a été fermé par le staff.";
+        if (c.archived.contains(p.getUuidAsString())) return "Chat archivé : désarchivez-le pour y écrire.";
         String text = clean(raw, TEXT_MAX);
         if (text.isEmpty()) return null;
         long now = System.currentTimeMillis();
@@ -315,6 +321,7 @@ public final class Chats {
     }
 
     private static void invite(MinecraftServer server, Chat c, UUID target, String by, String reason) {
+        if (c.archived.remove(target.toString())) dirty = true; // réinvité : le chat sort des archives
         ServerPlayerEntity t = server.getPlayerManager().getPlayer(target);
         if (t != null) {
             ServerPlayNetworking.send(t, new Net.ChatInvite(c.id, titleFor(c, t), by, reason));
@@ -348,6 +355,7 @@ public final class Chats {
         }
         boolean created = found == null;
         Chat c = found;
+        if (found != null && found.archived.remove(me)) dirty = true;
         if (created) {
             c = new Chat();
             c.id = store.nextId++;
@@ -444,6 +452,39 @@ public final class Chats {
             else p.sendMessage(Msg.info("Le chat « " + titleFor(c, p) + " » a été fermé par le staff."), false);
         }
         syncMembers(server, c);
+        return null;
+    }
+
+    /**
+     * Gère SON exemplaire d'un chat (les autres membres ne sont pas touchés) :
+     *  - « archive » / « unarchive » : consultation seule (on peut relire, pas écrire), plus de popup ni de non-lu ;
+     *  - « delete » : on quitte la conversation, elle disparaît définitivement de sa liste (effacée du serveur s'il ne reste personne).
+     * Le chat helper ne peut ni être archivé ni supprimé.
+     * @return message d'erreur ou null
+     */
+    public static String manage(ServerPlayerEntity p, int id, String action) {
+        MinecraftServer server = p.getServer();
+        Chat c = get(id);
+        if (server == null || c == null || !canSee(c, p)) return "Ce chat n'existe plus.";
+        if (HELPER.equals(c.kind)) return "Le chat helper ne peut pas être archivé ni supprimé.";
+        String me = p.getUuidAsString();
+        switch (action) {
+            case "archive" -> c.archived.add(me);
+            case "unarchive" -> c.archived.remove(me);
+            case "delete" -> {
+                String who = label(c, me);
+                if (!c.closed) systemLine(server, c, who + " a quitté la conversation.");
+                c.members.remove(me);
+                c.archived.remove(me);
+                c.pendingInvite.remove(me);
+                if (c.members.isEmpty()) store.chats.remove(c);
+            }
+            default -> {
+                return "Action inconnue.";
+            }
+        }
+        dirty = true;
+        syncTo(p);
         return null;
     }
 

@@ -168,6 +168,7 @@ public final class ClientRp {
         List<Net.ChatLineData> h = history.get(p.chat());
         while (h.size() > 300) h.remove(0);
         if (p.line().mine() || p.line().system()) return;
+        for (Net.ChatSummary c : chats) if (c.id() == p.chat() && c.archived()) return; // chat archivé : consultation seule, pas de non-lu ni de popup
         boolean inMenu = MinecraftClient.getInstance().currentScreen instanceof ChatsScreen;
         if (inMenu && viewingChat == p.chat()) return; // déjà sous les yeux
         unread.merge(p.chat(), 1, Integer::sum);
@@ -180,6 +181,16 @@ public final class ClientRp {
         toasts.removeIf(t -> t.chat == p.chat() && !t.invite);
         addToast(new Toast(p.chat(), title, line, "", System.currentTimeMillis() + 6_000L, false));
         playPing(1.0f);
+    }
+
+    /** Retire un chat supprimé de la liste locale (historique, non-lus, notifications) sans attendre le serveur. */
+    public static void removeChatLocal(int id) {
+        chats.removeIf(c -> c.id() == id);
+        history.remove(id);
+        unread.remove(id);
+        toasts.removeIf(t -> t.chat == id);
+        // attention : pour les propositions de présentation, le champ « chat » est l'id de la proposition : on ne touche qu'aux chats
+        notifs.removeIf(n -> n.chat() == id && ("chat".equals(n.kind()) || "invite".equals(n.kind())));
     }
 
     public static int totalUnread() {

@@ -140,6 +140,12 @@ public final class ServerNet {
             if (err != null) p.sendMessage(Msg.err(err), true);
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(Net.ChatManage.ID, (payload, ctx) -> {
+            ServerPlayerEntity p = ctx.player();
+            String err = Chats.manage(p, payload.chat(), payload.action());
+            if (err != null) p.sendMessage(Msg.err(err), true);
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(Net.RequestPlayers.ID, (payload, ctx) -> {
             ServerPlayerEntity p = ctx.player();
             if (!Staff.isStaff(p) || p.getServer() == null) return;

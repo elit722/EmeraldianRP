@@ -31,6 +31,7 @@ public class ChatsScreen extends Screen {
     private long openTime;
     private int x0, y0;
     private long closeArmedUntil = 0;
+    private long deleteArmedUntil = 0;
 
     // cache de mise en page des messages
     private List<Line> laidOut = new ArrayList<>();
@@ -58,6 +59,7 @@ public class ChatsScreen extends Screen {
         msgScroll = 0;
         laidKey = Integer.MIN_VALUE;
         closeArmedUntil = 0;
+        deleteArmedUntil = 0;
         ClientPlayNetworking.send(new Net.ChatQuery(id));
         rebuild();
     }
@@ -71,7 +73,7 @@ public class ChatsScreen extends Screen {
         if (selected == -1 && !ClientRp.chats.isEmpty()) {
             // premier affichage : on ouvre le plus récent (la liste est déjà triée par le serveur)
             Net.ChatSummary first = ClientRp.chats.get(0);
-            for (Net.ChatSummary c : ClientRp.chats) if (!c.closed()) { first = c; break; }
+            for (Net.ChatSummary c : ClientRp.chats) if (!c.closed() && !c.archived()) { first = c; break; }
             select(first.id());
             return;
         }
@@ -103,8 +105,26 @@ public class ChatsScreen extends Screen {
         btns.clear();
         if (textRenderer == null) return;
         Net.ChatSummary cur = current();
-        boolean open = cur != null && !cur.closed();
+        boolean open = cur != null && !cur.closed() && !cur.archived();
         btns.add(new Btn(x0 + PANEL_W - 14 - 60, y0 + 256, 60, 20, "Envoyer", Ui.GREEN, this::send).enabled(open));
+        // archiver (consultation seule) / supprimer (définitif) SON exemplaire du chat ; ne touche pas aux autres membres
+        boolean manageable = cur != null && !"helper".equals(cur.kind());
+        boolean arch = cur != null && cur.archived();
+        int dy = ClientRp.helper ? y0 + 306 : y0 + 284, dh = ClientRp.helper ? 16 : 20;
+        btns.add(new Btn(x0 + 14, dy, 100, dh, arch ? "Désarchiver" : "Archiver", Ui.YELLOW, () -> {
+            ClientPlayNetworking.send(new Net.ChatManage(selected, arch ? "unarchive" : "archive"));
+        }).enabled(manageable && !cur.closed()));
+        btns.add(new Btn(x0 + 14 + 104, dy, 100, dh, System.currentTimeMillis() < deleteArmedUntil ? "Confirmer ?" : "Supprimer", Ui.RED, () -> {
+            if (System.currentTimeMillis() < deleteArmedUntil) {
+                ClientPlayNetworking.send(new Net.ChatManage(selected, "delete"));
+                ClientRp.removeChatLocal(selected);
+                deleteArmedUntil = 0;
+                onUpdate(); // sélectionne un autre chat tout de suite
+                return;
+            }
+            deleteArmedUntil = System.currentTimeMillis() + 3000;
+            rebuild();
+        }).enabled(manageable));
         if (ClientRp.helper) {
             int bx = x0 + 14, by = y0 + 284, bw = 108;
             btns.add(new Btn(bx, by, bw, 20, "Nouveau chat", Ui.AQUA, () -> pickPlayer("Nouveau chat",
@@ -157,8 +177,10 @@ public class ChatsScreen extends Screen {
 
     @Override
     public void tick() {
-        if (closeArmedUntil != 0 && System.currentTimeMillis() > closeArmedUntil) {
-            closeArmedUntil = 0;
+        long now = System.currentTimeMillis();
+        if ((closeArmedUntil != 0 && now > closeArmedUntil) || (deleteArmedUntil != 0 && now > deleteArmedUntil)) {
+            if (now > closeArmedUntil) closeArmedUntil = 0;
+            if (now > deleteArmedUntil) deleteArmedUntil = 0;
             rebuild();
         }
     }
@@ -213,12 +235,12 @@ public class ChatsScreen extends Screen {
             boolean sel = s.id() == selected;
             boolean hover = Ui.inside(mx, my, lx, ry, lw, ROW_H) && my < ly + LIST_H;
             if (sel || hover) c.fill(lx + 1, ry, lx + lw - 1, ry + ROW_H, sel ? Ui.BTN_HOVER : Ui.BTN);
-            int bar = s.closed() ? Ui.MUTED : ("helper".equals(s.kind()) ? Ui.GREEN : ("group".equals(s.kind()) ? Ui.YELLOW : Ui.AQUA));
+            int bar = s.closed() || s.archived() ? Ui.MUTED : ("helper".equals(s.kind()) ? Ui.GREEN : ("group".equals(s.kind()) ? Ui.YELLOW : Ui.AQUA));
             c.fill(lx + 1, ry, lx + 3, ry + ROW_H, bar);
             int un = ClientRp.unread.getOrDefault(s.id(), 0);
             String badge = un > 0 ? " (" + un + ")" : "";
-            String t = (s.closed() ? "[fermé] " : "") + s.title();
-            c.drawText(tr, tr.trimToWidth(t, lw - 14 - tr.getWidth(badge)), lx + 8, ry + 8, sel ? Ui.ACCENT : (s.closed() ? Ui.MUTED : Ui.TEXT), false);
+            String t = (s.closed() ? "[fermé] " : s.archived() ? "[archivé] " : "") + s.title();
+            c.drawText(tr, tr.trimToWidth(t, lw - 14 - tr.getWidth(badge)), lx + 8, ry + 8, sel ? Ui.ACCENT : (s.closed() || s.archived() ? Ui.MUTED : Ui.TEXT), false);
             if (un > 0) c.drawText(tr, badge, lx + lw - 6 - tr.getWidth(badge), ry + 8, Ui.RED, false);
         }
         c.disableScissor();
@@ -247,10 +269,11 @@ public class ChatsScreen extends Screen {
             }
             if (msgScroll > 0) c.drawText(tr, "↓ " + msgScroll, mxl + mw - 8 - tr.getWidth("↓ " + msgScroll), my0 + mh - 11, Ui.YELLOW, false);
             if (cur.closed()) c.drawText(tr, "Ce chat est fermé (lecture seule).", mxl, y0 + 280 - 2, Ui.YELLOW, false);
+            else if (cur.archived()) c.drawText(tr, "Chat archivé (lecture seule) : « Désarchiver » pour écrire.", mxl, y0 + 280 - 2, Ui.YELLOW, false);
         }
 
         for (Btn b : btns) Ui.button(c, tr, b.x, b.y, b.w, b.h, b.label, mx, my, b.enabled, b.accent);
-        c.drawText(tr, "Entrée : envoyer · molette : défiler · Échap : fermer", x0 + 14, y0 + PANEL_H - 14, Ui.MUTED, false);
+        c.drawText(tr, "Entrée : envoyer · molette : défiler · Échap : fermer", x0 + 14, y0 + PANEL_H - 12, Ui.MUTED, false);
     }
 
     // ---------------------------------------------------------------- entrées
