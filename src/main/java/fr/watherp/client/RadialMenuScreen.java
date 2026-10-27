@@ -13,6 +13,12 @@ import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import dev.doctor4t.wathe.cca.GameWorldComponent;
 import net.minecraft.text.Text;
 import org.joml.Matrix4f;
 
@@ -31,9 +37,29 @@ public class RadialMenuScreen extends Screen {
      * Une entrée de la roue. {@code special} : la tranche prend sa propre couleur (comme « Annuler » est rouge) ;
      * sinon {@code color} ne sert qu'aux accents.
      */
-    public record Entry(String label, String hint, int color, IntSupplier badge, Consumer<MinecraftClient> action, boolean special) {
-        public Entry(String label, String hint, int color, IntSupplier badge, Consumer<MinecraftClient> action) {
-            this(label, hint, color, badge, action, false);
+    public record Entry(String label, String hint, Item icon, int color, IntSupplier badge, Consumer<MinecraftClient> action, boolean special) {
+        public Entry(String label, String hint, Item icon, int color, IntSupplier badge, Consumer<MinecraftClient> action) {
+            this(label, hint, icon, color, badge, action, false);
+        }
+    }
+
+    /** Item d'un autre mod (ex. « wathe:revolver ») ; {@code fallback} s'il n'existe pas dans cette version. */
+    private static Item modItem(String id, Item fallback) {
+        try {
+            Item it = Registries.ITEM.get(Identifier.of(id));
+            return it == Items.AIR ? fallback : it;
+        } catch (Throwable t) {
+            return fallback;
+        }
+    }
+
+    /** Une manche / partie Wathe est-elle en cours (état synchronisé du monde client) ? */
+    private static boolean gameRunning() {
+        try {
+            var w = MinecraftClient.getInstance().world;
+            return w != null && GameWorldComponent.KEY.get(w).isRunning();
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -85,47 +111,48 @@ public class RadialMenuScreen extends Screen {
     /** Tous les menus du mod. Les menus staff n'apparaissent que pour ceux qui y ont accès (le serveur revérifie chaque action). */
     private static List<Entry> buildEntries() {
         List<Entry> l = new ArrayList<>();
-        l.add(new Entry("Messagerie", "Chats privés", Ui.AQUA, ClientRp::totalUnread,
+        l.add(new Entry("Messagerie", "Chats privés", Items.WRITABLE_BOOK, Ui.AQUA, ClientRp::totalUnread,
             mc -> mc.setScreen(new ChatsScreen(-1))));
-        l.add(new Entry("Notifications", "Centre des notifications", Ui.ACCENT, () -> ClientRp.unreadNotifs,
+        l.add(new Entry("Notifications", "Centre des notifications", Items.BELL, Ui.ACCENT, () -> ClientRp.unreadNotifs,
             mc -> mc.setScreen(new NotifCenterScreen())));
-        l.add(new Entry("Carnet", "Carnet de contacts", Ui.GREEN, () -> 0,
+        l.add(new Entry("Carnet", "Carnet de contacts", Items.BOOK, Ui.GREEN, () -> 0,
             WatheRPClient::openContacts));
-        l.add(new Entry("Révéler nom", "Révéler son vrai nom", Ui.GREEN, () -> ClientRp.aliased.size(),
+        l.add(new Entry("Révéler nom", "Révéler son vrai nom", Items.ENDER_EYE, Ui.GREEN, () -> ClientRp.aliased.size(),
             mc -> mc.setScreen(new RevealScreen())));
-        l.add(new Entry("Surnoms", "Donner des surnoms", Ui.AQUA, () -> 0,
+        l.add(new Entry("Surnoms", "Donner des surnoms", Items.NAME_TAG, Ui.AQUA, () -> 0,
             mc -> mc.setScreen(new NicknamesScreen())));
-        l.add(new Entry("Mon nom RP", "Afficher / modifier mon nom RP", Ui.ACCENT, () -> 0, mc -> {
+        l.add(new Entry("Nom RP", "Afficher / modifier mon nom RP", modItem("watherp:identity_paper", Items.PAPER), Ui.ACCENT, () -> 0, mc -> {
             mc.setScreen(null);
             if (mc.getNetworkHandler() != null) mc.getNetworkHandler().sendChatCommand("rpnom");
         }));
         if (WatheRPClient.canIntroduceAll(MinecraftClient.getInstance())) {
-            l.add(new Entry("Se présenter", "Se présenter à tous les proches", Ui.GREEN, () -> 0,
+            l.add(new Entry("Se présenter", "Se présenter à tous les proches", Items.EMERALD, Ui.GREEN, () -> 0,
                 mc -> mc.setScreen(new IntroduceScreen(null))));
         }
-        l.add(new Entry("Commandes", "Taper une commande", Ui.MUTED, () -> 0,
+        l.add(new Entry("Commandes", "Taper une commande", Items.COMMAND_BLOCK, Ui.MUTED, () -> 0,
             mc -> mc.setScreen(new CommandScreen())));
-        l.add(new Entry("Aide", "Demander de l'aide au staff", Ui.YELLOW, () -> 0, mc -> {
+        l.add(new Entry("Aide", "Demander de l'aide au staff", Items.FIREWORK_ROCKET, Ui.YELLOW, () -> 0, mc -> {
             mc.setScreen(null);
             WatheRPClient.requestHelp();
         }));
-        l.add(new Entry("Débrief", "Débrief de la dernière partie", Ui.YELLOW, () -> 0, mc -> {
+        l.add(new Entry("Débrief", "Débrief de la dernière partie", Items.FILLED_MAP, Ui.YELLOW, () -> 0, mc -> {
             mc.setScreen(null);
             WatheRPClient.requestDebrief();
         }));
         // menus de Wathe (seulement si la version de Wathe installée les contient)
-        if (watheHas(WATHE_SKINS_SCREEN)) {
-            l.add(new Entry("Skins d'armes", "Menu des skins d'armes (Wathe)", WATHE_SKINS_COLOR, () -> 0,
+        // Skins d'armes : uniquement en dehors d'une manche / partie
+        if (!gameRunning() && watheHas(WATHE_SKINS_SCREEN)) {
+            l.add(new Entry("Skins d'armes", "Menu des skins d'armes (Wathe)", modItem("wathe:revolver", Items.CROSSBOW), WATHE_SKINS_COLOR, () -> 0,
                 mc -> openWathe(mc, WATHE_SKINS_SCREEN), true));
         }
         var me = MinecraftClient.getInstance().player;
         // même règle que la touche d'admin de Wathe : niveau d'opérateur 2
         if (me != null && me.hasPermissionLevel(2) && watheHas(WATHE_ADMIN_SCREEN)) {
-            l.add(new Entry("Config partie", "Game config : menu admin de Wathe", WATHE_CONFIG_COLOR, () -> 0,
+            l.add(new Entry("Config partie", "Game config : menu admin de Wathe", Items.COMPARATOR, WATHE_CONFIG_COLOR, () -> 0,
                 mc -> openWathe(mc, WATHE_ADMIN_SCREEN), true));
         }
         if (ClientRp.helper) {
-            l.add(new Entry("Panneau staff", "Tickets, dossiers, chat staff", Ui.RED, () -> 0, mc -> {
+            l.add(new Entry("Panneau staff", "Tickets, dossiers, chat staff", Items.SHIELD, Ui.RED, () -> 0, mc -> {
                 mc.setScreen(null);
                 ClientRp.wantPanel = true;
                 ClientPlayNetworking.send(new Net.RequestTickets());
@@ -221,17 +248,30 @@ public class RadialMenuScreen extends Screen {
             float rr = r1 + (hov ? 12 : 8);
             int lx = Math.round(cx + (float) (rr * s)), ly = Math.round(cy - (float) (rr * co));
             int tw = tr.getWidth(label);
-            int tx = s > 0.25 ? lx : (s < -0.25 ? lx - tw : lx - tw / 2);
+            int tx = s > 0.15 ? lx : (s < -0.15 ? lx - tw : lx - tw / 2);
             int ty = Math.round(ly - 4 - (float) (6 * co));
             c.drawText(tr, label, tx, ty, Ui.alpha(color | 0xFF000000, an), hov);
+            // icône au milieu de la tranche (Annuler : barrière)
+            Item icon = i == 0 ? Items.BARRIER : entries.get(i - 1).icon();
+            float sc = Math.min(1f, (r1 - r0 - 6f) / 16f);
+            float mr = (r0 + r1) / 2f + (hov ? 2.5f : 0f);
+            float ix = cx + (float) (mr * s), iy = cy - (float) (mr * co);
+            c.getMatrices().push();
+            c.getMatrices().translate(ix, iy, 0f);
+            c.getMatrices().scale(sc, sc, 1f);
+            c.drawItem(new ItemStack(icon), -8, -8);
+            c.getMatrices().pop();
             if (i > 0) {
                 int badge = entries.get(i - 1).badge().getAsInt();
                 if (badge > 0) {
                     String bs = String.valueOf(badge);
                     int bw = Math.max(11, tr.getWidth(bs) + 5);
-                    int bx = Math.round(cx + (float) ((r0 + r1) / 2 * s)) - bw / 2, by = Math.round(cy - (float) ((r0 + r1) / 2 * co)) - 6;
+                    int bx = Math.round(ix + 4 * sc), by = Math.round(iy - 12 * sc);
+                    c.getMatrices().push();
+                    c.getMatrices().translate(0f, 0f, 200f);
                     c.fill(bx, by, bx + bw, by + 12, Ui.ACCENT);
                     c.drawText(tr, bs, bx + (bw - tr.getWidth(bs)) / 2, by + 2, 0xFF000000, false);
+                    c.getMatrices().pop();
                 }
             }
         }
